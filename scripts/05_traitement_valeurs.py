@@ -15,8 +15,11 @@
 #    par des durees tirees aleatoirement dans des tranches realistes, conditionnees
 #    sur objet_pret et montant_pret_fcfa (jamais sur statut_remboursement, pour ne
 #    pas fabriquer un proxy de la cible comme categorie_risque).
-# 4) Plancher de plausibilite metier sur revenu_mensuel_fcfa (99 lignes < 10 000
-#    FCFA/mois, non plausible pour solliciter un credit) - decision du 04/08/2026.
+# 4) Suppression des lignes a revenu_mensuel_fcfa non plausible (< 15 000
+#    FCFA/mois, tres en-dessous du SMIG formel camerounais d'environ 41 875
+#    FCFA/mois) - decision du 04/08/2026, revisee le meme jour (suppression des
+#    lignes plutot que plancher/capping, pour ne pas conserver une valeur
+#    fabriquee dans le dataset d'entrainement).
 # 5) Regeneration complete de tranche_age : le dataset source reflete une
 #    population de refinancement hypothecaire americain (0,9% de <25 ans, 18,8%
 #    de plus de 65 ans, defaut croissant avec l'age) plutot qu'une clientele
@@ -94,20 +97,29 @@ for col in COLONNES_IQR:
     )
 
 # %% [markdown]
-# ### 2 bis. Plancher de plausibilite metier sur revenu_mensuel_fcfa
+# ### 2 bis. Suppression des lignes a revenu non plausible (revenu_mensuel_fcfa)
 # La borne basse IQR est negative (aucun revenu n'est donc capte par la methode
 # statistique), mais un revenu declare sous 15 000 FCFA/mois n'est pas plausible
-# pour un demandeur de credit. Plancher metier fixe a 15 000 FCFA/mois (sous le
-# SMIG formel camerounais de 36 270 FCFA, pour rester compatible avec un profil
-# informel/rural), distinct du capping statistique ci-dessus.
+# pour un demandeur de credit - a comparer au SMIG formel camerounais, d'environ
+# 41 875 FCFA/mois depuis sa revalorisation de 2023 (36 270 FCFA avant). Seuil de
+# suppression fixe a 15 000 FCFA (nettement sous le SMIG, pas au niveau du SMIG) :
+# le public vise par le projet est en partie informel (agriculture, petit
+# commerce), ou des revenus reels sous le SMIG formel restent plausibles - relever
+# le seuil jusqu'au SMIG romprait avec ce principe (meme logique que l'exclusion
+# de score_credit_bureau, section 4 du plan). Decision du 04/08/2026 : suppression
+# des lignes plutot que capping/plancher, ces valeurs etant jugees trop peu
+# fiables pour etre corrigees et conservees dans le jeu d'entrainement.
 
 # %%
-PLANCHER_REVENU_FCFA = 15_000
-n_sous_plancher = (df["revenu_mensuel_fcfa"] < PLANCHER_REVENU_FCFA).sum()
-df["revenu_mensuel_fcfa"] = df["revenu_mensuel_fcfa"].clip(lower=PLANCHER_REVENU_FCFA)
+SEUIL_REVENU_MIN_FCFA = 15_000
+n_avant_suppression = len(df)
+lignes_revenu_invalide = df["revenu_mensuel_fcfa"] < SEUIL_REVENU_MIN_FCFA
+n_supprimees = lignes_revenu_invalide.sum()
+df = df[~lignes_revenu_invalide].reset_index(drop=True)
 print(
-    f"revenu_mensuel_fcfa : {n_sous_plancher} lignes remontees au plancher "
-    f"de {PLANCHER_REVENU_FCFA} FCFA/mois"
+    f"revenu_mensuel_fcfa : {n_supprimees} lignes supprimees "
+    f"(< {SEUIL_REVENU_MIN_FCFA} FCFA/mois) sur {n_avant_suppression} "
+    f"({100 * n_supprimees / n_avant_suppression:.2f}%)"
 )
 
 # %% [markdown]

@@ -56,8 +56,11 @@ frais_initiaux_fcfa réglé le 31/07 (voir section 4.6 d'Analyse_et_Plan_Projet.
 Déclarées par le client/agent au moment de la demande, signal statistique réel et
 disponible avant toute décision d'octroi :
 
-- revenu_mensuel_fcfa   : cœur de l'évaluation, feature centrale (plancher de plausibilité à
-  15 000 FCFA/mois ajouté le 04/08/2026, 228 lignes concernées)
+- revenu_mensuel_fcfa   : cœur de l'évaluation, feature centrale. 228 lignes (0,15%) sous le
+  seuil de plausibilité de 15 000 FCFA/mois supprimées le 04/08/2026 (nettement sous le SMIG
+  formel camerounais, ~41 875 FCFA/mois) — dataset passé de 148 670 à 148 442 lignes. Seuil
+  volontairement bas (pas au niveau du SMIG) : le public visé inclut le secteur informel, où
+  des revenus réels sous le SMIG formel restent plausibles.
 - montant_pret_fcfa     : montant demandé, feature prédictive
 - duree_mois            : durée du financement, feature prédictive. Régénérée entièrement le
   04/08/2026 (tranches réalistes camerounaises par objet_pret x montant, 3 à 60 mois) : la
@@ -132,7 +135,9 @@ tranchés le 29-31/07 (même logique que pour region_cameroun le 31/07 : une don
 inutilisable ou trompeuse reste corrigée avant la modélisation, pas après) :
 - duree_mois régénérée (tranches réalistes camerounaises, remplace le profil
   hypothécaire américain à 30 ans hérité du dataset source).
-- revenu_mensuel_fcfa : plancher de plausibilité à 15 000 FCFA/mois.
+- revenu_mensuel_fcfa : 228 lignes (< 15 000 FCFA/mois) supprimées du dataset
+  (dataset : 148 670 → 148 442 lignes), plutôt qu'un plancher/capping — ces
+  valeurs jugées trop peu fiables pour être corrigées et conservées.
 - type_pret relabellisée (Banque/Microfinance/Cooperative_epargne_credit).
 - tranche_age régénérée puis reclassée de feature ML à descriptive uniquement
   (perte de signal assumée, cf. section 3.B).
