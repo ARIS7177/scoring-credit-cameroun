@@ -56,11 +56,18 @@ frais_initiaux_fcfa réglé le 31/07 (voir section 4.6 d'Analyse_et_Plan_Projet.
 Déclarées par le client/agent au moment de la demande, signal statistique réel et
 disponible avant toute décision d'octroi :
 
-- revenu_mensuel_fcfa   : cœur de l'évaluation, feature centrale
+- revenu_mensuel_fcfa   : cœur de l'évaluation, feature centrale (plancher de plausibilité à
+  15 000 FCFA/mois ajouté le 04/08/2026, 228 lignes concernées)
 - montant_pret_fcfa     : montant demandé, feature prédictive
-- duree_mois            : durée du financement, feature prédictive
-- tranche_age           : classe d'âge, feature prédictive
-- type_pret             : catégorie de produit de crédit
+- duree_mois            : durée du financement, feature prédictive. Régénérée entièrement le
+  04/08/2026 (tranches réalistes camerounaises par objet_pret x montant, 3 à 60 mois) : la
+  distribution héritée du dataset source (360 mois / 30 ans sur 81,8% des lignes, typique d'un
+  prêt hypothécaire américain) ne correspondait à aucune réalité de crédit général/microfinance
+  au Cameroun et rendait en outre la méthode IQR dégénérée (Q1 = Q3 = 360).
+- type_pret             : catégorie de produit de crédit. Relabellisée le 04/08/2026 :
+  Type_1/2/3 → Banque/Microfinance/Cooperative_epargne_credit (renommage pur, aucune valeur
+  déplacée), pour rattacher ce signal réel (22,8%/34,5%/25,1% de défaut) au périmètre banques +
+  microfinance du projet (section 1 du plan).
 - objet_pret            : finalité du crédit (relibellée "crédit en général")
 - secteur_activite      : signal FORT (23-24% vs 34-37% de défaut selon secteur)
 - credit_ouvert         : ligne de crédit déjà ouverte (signal réel mais rare — 0,4% des
@@ -74,6 +81,12 @@ disponible avant toute décision d'octroi :
 Servent au profil du client dans l'app / le rapport, sans jamais entrer dans l'entraînement :
 
 - genre                    : motif éthique (discrimination par genre encadrée/interdite)
+- tranche_age              : décision du 04/08/2026 - régénérée avec une distribution active
+  camerounaise (25-44 ans : 57% au lieu de 35% dans le dataset source, hérité d'un profil de
+  refinancement hypothécaire américain vieillissant), tirée indépendamment de toute autre
+  colonne pour éviter toute fuite. Conséquence assumée : taux de défaut plat sur toutes les
+  tranches (24,0-25,1%, vérifié). Reclassée de feature ML (ancienne section 3.A) à descriptive
+  uniquement, comme niveau_education.
 - niveau_education          : aucun signal statistique (24,0-25,5% de défaut, plat)
 - membre_tontine             : signal quasi nul (24,8% vs 24,5%)
 - activite_saisonniere       : signal quasi nul (25,0% vs 24,1%)
@@ -105,9 +118,24 @@ RÉSUMÉ CHIFFRÉ
     dont déjà supprimées (script 03) ............................. 9
     dont encore à supprimer en Semaine 2 .......................... 14
 - Section 2 (conservées, hors classification) ...................... 2 colonnes
-- Section 3.A (features ML retenues) .............................. 11 colonnes
-- Section 3.B (descriptives seulement) ............................... 9 colonnes
+- Section 3.A (features ML retenues) .............................. 10 colonnes
+    (tranche_age reclassée en 3.B le 04/08/2026, voir note ci-dessous)
+- Section 3.B (descriptives seulement) ............................. 10 colonnes
 - Section 3.C (levier de décision, non statistique) ................. 1 colonne
+
+==================================================================
+NOTE — MISES À JOUR DU 04/08/2026 (Aristide, Semaine 2)
+==================================================================
+Décisions prises pendant le traitement des valeurs manquantes/aberrantes
+(scripts/05_traitement_valeurs.py), en réouverture assumée de points par ailleurs
+tranchés le 29-31/07 (même logique que pour region_cameroun le 31/07 : une donnée
+inutilisable ou trompeuse reste corrigée avant la modélisation, pas après) :
+- duree_mois régénérée (tranches réalistes camerounaises, remplace le profil
+  hypothécaire américain à 30 ans hérité du dataset source).
+- revenu_mensuel_fcfa : plancher de plausibilité à 15 000 FCFA/mois.
+- type_pret relabellisée (Banque/Microfinance/Cooperative_epargne_credit).
+- tranche_age régénérée puis reclassée de feature ML à descriptive uniquement
+  (perte de signal assumée, cf. section 3.B).
 
 ==================================================================
 NOTE — DICTIONNAIRE DE MARIE-THÉRÈSE À METTRE À JOUR
