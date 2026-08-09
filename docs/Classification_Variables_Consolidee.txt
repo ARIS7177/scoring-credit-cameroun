@@ -51,6 +51,18 @@ frais_initiaux_fcfa réglé le 31/07 (voir section 4.6 d'Analyse_et_Plan_Projet.
   1.C). Contredit la liste finale d'Andy (Liste_finale.docx, 06/08) qui la retient comme une
   des 3 variables prioritaires — à signaler avant le point d'équipe du 9 août.
 
+1.E Décision d'équipe le 09 août 2026 — supprimée y compris à titre descriptif
+- type_pret (Banque/Microfinance/Cooperative_epargne_credit) : signal statistique réel
+  confirmé (22,8%/34,5%/25,1% de défaut selon catégorie), conservée en section 3.A comme
+  feature ML (3 colonnes one-hot) jusqu'à cette date. Décision d'équipe le 09/08 : le projet
+  se positionne déjà comme une solution de microfinance de base (recadrage de périmètre
+  produit, pas un constat statistique) → la colonne serait constante ("Microfinance") pour
+  toute nouvelle demande en production, donc sans aucune valeur même descriptive. Même
+  logique que region_cameroun (1.C) et mode_soumission (1.D). À supprimer du dataset dans
+  scripts/06_encodage_normalisation.py (retrait des 3 colonnes one-hot type_pret_*) et du
+  formulaire — mise à jour du script et régénération de Loan_Default_Cameroun_Encode.csv à
+  faire par Aristide après le point d'équipe du 09/08, avant le début de la modélisation S3.
+
 ==================================================================
 2. COLONNES À CONSERVER (hors classification feature/formulaire)
 ==================================================================
@@ -78,10 +90,6 @@ disponible avant toute décision d'octroi :
   distribution héritée du dataset source (360 mois / 30 ans sur 81,8% des lignes, typique d'un
   prêt hypothécaire américain) ne correspondait à aucune réalité de crédit général/microfinance
   au Cameroun et rendait en outre la méthode IQR dégénérée (Q1 = Q3 = 360).
-- type_pret             : catégorie de produit de crédit. Relabellisée le 04/08/2026 :
-  Type_1/2/3 → Banque/Microfinance/Cooperative_epargne_credit (renommage pur, aucune valeur
-  déplacée), pour rattacher ce signal réel (22,8%/34,5%/25,1% de défaut) au périmètre banques +
-  microfinance du projet (section 1 du plan).
 - objet_pret            : finalité du crédit (relibellée "crédit en général")
 - secteur_activite      : signal FORT (23-24% vs 34-37% de défaut selon secteur)
 - credit_ouvert         : ligne de crédit déjà ouverte (signal réel mais rare — 0,4% des
@@ -131,13 +139,17 @@ RÉSUMÉ CHIFFRÉ
     dont déjà supprimées (script 03) ............................. 9
     dont encore à supprimer en Semaine 2 (section 1.B) ........... 14
     dont supprimées ultérieurement, hors dataset ET formulaire
-      (region_cameroun 1.C + mode_soumission 1.D) ................. 2
+      (region_cameroun 1.C + mode_soumission 1.D + type_pret 1.E) . 3
 - Section 2 (conservées, hors classification) ...................... 2 colonnes
-- Section 3.A (features ML retenues) ................................ 9 colonnes
+- Section 3.A (features ML retenues) ................................ 8 colonnes
     (tranche_age reclassée en 3.B le 04/08/2026 ; mode_soumission supprimée
-    entièrement le 06/08/2026, voir notes ci-dessous)
+    entièrement le 06/08/2026 ; type_pret supprimé entièrement le 09/08/2026 —
+    voir notes ci-dessous)
 - Section 3.B (descriptives seulement) ............................. 10 colonnes
 - Section 3.C (levier de décision, non statistique) ................. 1 colonne
+
+Nombre de features ML utilisées par le modèle après encodage (one-hot inclus) : 16
+(19 avant le 09/08 ; -3 pour les colonnes one-hot type_pret_* retirées, voir section 1.E).
 
 ==================================================================
 NOTE — MISES À JOUR DU 04/08/2026 (Aristide, Semaine 2)
@@ -173,6 +185,21 @@ Décisions prises pendant l'encodage/normalisation (scripts/06_encodage_normalis
   tranche_age, catégories type_pret) a été produite sur Loan_Default_Cameroun_Enrichi.csv,
   antérieur aux régénérations du 04/08 — à recalculer sur *_Traite.csv avant le 09/08 pour
   rester cohérent avec le dataset réellement utilisé pour la modélisation.
+
+==================================================================
+NOTE — MISE À JOUR DU 09/08/2026 (décision d'équipe, point du 9 août)
+==================================================================
+- type_pret retiré entièrement du dataset et du formulaire (voir section 1.E) : le projet
+  se positionne déjà comme une solution de microfinance de base, donc la colonne serait
+  toujours constante ("Microfinance") pour toute nouvelle demande en production — même
+  raisonnement que region_cameroun (31/07) et mode_soumission (06/08). Annule la
+  relabellisation Type_1/2/3 → Banque/Microfinance/Cooperative_epargne_credit faite le
+  04/08/2026 (note ci-dessus) : la colonne relabellisée est maintenant supprimée, pas
+  seulement renommée.
+- À faire (Aristide) : mettre à jour scripts/06_encodage_normalisation.py pour ne plus
+  générer les colonnes one-hot type_pret_*, régénérer et recommiter
+  Loan_Default_Cameroun_Encode.csv avant le début de la modélisation (S3).
+- Nombre de features ML final : 16 (au lieu de 19), voir RÉSUMÉ CHIFFRÉ ci-dessus.
 
 ==================================================================
 NOTE — DICTIONNAIRE DE MARIE-THÉRÈSE À METTRE À JOUR

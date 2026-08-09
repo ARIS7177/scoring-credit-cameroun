@@ -3,11 +3,12 @@
 # Entree  : ../data/processed/Loan_Default_Cameroun_Traite.csv (sortie du script 05)
 # Sortie  : ../data/processed/Loan_Default_Cameroun_Encode.csv
 #
-# Taches (mercredi 5 - jeudi 6 aout 2026) :
+# Taches (mercredi 5 - jeudi 6 aout 2026, mise a jour dimanche 9 aout 2026) :
 # 1) Suppression de mode_soumission (decision du 06/08/2026, voir note ci-dessous)
+#    et de type_pret (decision du 09/08/2026, voir note ci-dessous)
 # 2) Encodage de la cible statut_remboursement (binaire, 0/1)
 # 3) Encodage binaire (Oui/Non -> 1/0) de usage_professionnel et credit_ouvert
-# 4) One-Hot Encoding de type_pret, objet_pret, secteur_activite
+# 4) One-Hot Encoding de objet_pret, secteur_activite
 # 5) Normalisation (StandardScaler) des variables numeriques du modele
 #
 # Note du 06/08/2026 (Aristide) - suppression de mode_soumission :
@@ -35,6 +36,18 @@
 # suit la classification consolidee (Classification_Variables_Consolidee.txt),
 # pas la liste d'Andy, sur ces 3 points precis - egalement a signaler avant le
 # 9 aout.
+#
+# Note du 09/08/2026 (decision d'equipe, point du 9 aout) - suppression de
+# type_pret : signal statistique reel confirme le 30/07 (22,8%/34,5%/25,1% de
+# defaut selon Banque/Microfinance/Cooperative_epargne_credit), conserve comme
+# feature ML (One-Hot) jusqu'a cette date. Decision d'equipe : le projet se
+# positionne deja comme une solution de microfinance de base (recadrage de
+# perimetre produit, pas un constat statistique) - la colonne serait donc
+# constante ("Microfinance") pour toute nouvelle demande en production, sans
+# aucune valeur meme descriptive. Meme principe que mode_soumission (note
+# ci-dessus) et region_cameroun (31/07) : supprimee du dataset dans son
+# ensemble, pas seulement exclue des features du modele. Voir
+# Classification_Variables_Consolidee.txt section 1.E.
 
 # %%
 import sys
@@ -53,13 +66,13 @@ df = pd.read_csv(INPUT_PATH)
 print("Dimensions en entree :", df.shape)
 
 # %% [markdown]
-# ### 1. Suppression de mode_soumission
-# Colonne retiree du perimetre applicatif (voir note ci-dessus) : supprimee du
-# dataset dans son ensemble, pas seulement des features du modele.
+# ### 1. Suppression de mode_soumission et type_pret
+# Colonnes retirees du perimetre applicatif (voir notes ci-dessus) : supprimees
+# du dataset dans son ensemble, pas seulement des features du modele.
 
 # %%
-df = df.drop(columns=["mode_soumission"])
-print("mode_soumission supprimee. Dimensions :", df.shape)
+df = df.drop(columns=["mode_soumission", "type_pret"])
+print("mode_soumission et type_pret supprimees. Dimensions :", df.shape)
 
 # %% [markdown]
 # ### 2. Encodage de la cible (statut_remboursement)
@@ -114,13 +127,12 @@ for col in COLONNES_BINAIRES:
 
 # %% [markdown]
 # ### 5. One-Hot Encoding des variables categorielles nominales
-# type_pret, objet_pret et secteur_activite n'ont pas d'ordre naturel entre leurs
+# objet_pret et secteur_activite n'ont pas d'ordre naturel entre leurs
 # categories : le One-Hot Encoding evite d'imposer une hierarchie artificielle
-# qu'un Label Encoding introduirait (ex. Banque=0 < Microfinance=1 n'aurait
-# aucun sens pour un modele lineaire).
+# qu'un Label Encoding introduirait.
 
 # %%
-COLONNES_ONEHOT = ["type_pret", "objet_pret", "secteur_activite"]
+COLONNES_ONEHOT = ["objet_pret", "secteur_activite"]
 
 for col in COLONNES_ONEHOT:
     print(f"{col} : {df[col].nunique()} categories -> {sorted(df[col].unique())}")
