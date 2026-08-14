@@ -1,0 +1,201 @@
+SCORING CREDIT CAMEROUN - INTERPRETATION DE LA MODELISATION ML
+Semaine 3, lundi 10 - vendredi 14 aout 2026 (Aristide)
+Fichiers sources : scripts/07_modelisation.py, notebooks/03_modelisation.ipynb
+================================================================
+
+RESULTATS BRUTS (jeu de test, 29 689 lignes sur 148 442 - split 80/20 stratifie)
+------------------------------------------------------------------------------
+Modele                    AUC-ROC   F1      Precision   Rappel   AUC-ROC (CV 5-fold)
+Regression Logistique      0.590    0.380   0.296       0.530    0.589 +/- 0.0048
+Random Forest               0.776    0.596   0.604       0.588    0.775 +/- 0.0036
+XGBoost                     0.793    0.610   0.601       0.619    0.786 +/- 0.0047
+CatBoost                    0.805    0.622   0.614       0.630    0.803 +/- 0.0036
+
+Meilleur modele sur les 4 metriques : CatBoost, teste vendredi 14 aout en
+complement des 3 modeles prevus au planning initial (voir ADDENDUM, section 4).
+Conforme a ce qu'attendait le plan (docs/Analyse_et_Plan_Projet.docx, section 5,
+semaine 3) sur un point : "XGBoost est attendu comme le plus performant sur ce
+type de donnees tabulaires" - vrai parmi les 3 modeles prevus, mais CatBoost
+(non prevu au planning, teste par prudence avant la sauvegarde definitive) fait
+legerement mieux. Modele final retenu : CatBoost. Sauvegarde .joblib prevue
+juste apres validation de ce document (calendrier initial : vendredi 14 aout).
+
+================================================================
+1. LOGIQUE DE CHAQUE MODELE
+================================================================
+
+REGRESSION LOGISTIQUE (modele de reference)
+- Calcule une somme ponderee des 16 features, passee dans une fonction
+  sigmoide pour obtenir une probabilite de defaut entre 0 et 1.
+- Suppose implicitement un effet additif et constant de chaque variable,
+  independamment des autres. Ne capte pas naturellement les interactions
+  (ex : effet du secteur d'activite qui ne compte que si le revenu est bas)
+  ni les relations non lineaires, sauf a fabriquer ces variables a la main.
+- Resultat obtenu (AUC 0.590, a peine au-dessus de 0.50 = hasard pur) :
+  la relation entre les 16 variables et le defaut n'est pas de nature
+  lineaire/additive simple, ou le signal lineaire disponible est trop faible
+  pour bien discriminer. Ce n'est pas un echec du protocole : ce modele sert
+  justement de ligne de base pour mesurer, par comparaison, si les modeles
+  suivants apportent quelque chose de reel.
+
+RANDOM FOREST
+- Ensemble d'arbres de decision INDEPENDANTS (bagging) : chaque arbre est
+  entraine sur un tirage aleatoire des lignes et, a chaque noeud, sur un
+  sous-ensemble aleatoire des features. Chaque arbre decoupe l'espace par
+  des regles en cascade ("si revenu < X et secteur = agriculture alors...").
+  Capte nativement les interactions et non-linearites. La prediction finale
+  moyenne les votes de tous les arbres, ce qui reduit la variance qu'aurait
+  un arbre unique (sujet au sur-apprentissage).
+- Resultat obtenu (AUC 0.776, bond net depuis 0.590) : confirme que le
+  signal existe reellement dans les donnees, mais qu'il est porte par des
+  interactions/non-linearites qu'un modele lineaire ne pouvait pas voir -
+  pas par une absence de signal.
+
+XGBOOST
+- Ensemble d'arbres aussi, mais construits SEQUENTIELLEMENT (boosting) :
+  chaque nouvel arbre corrige specifiquement les erreurs (residus) laissees
+  par les arbres precedents, via une descente de gradient sur une fonction
+  de perte, avec regularisation integree contre le sur-apprentissage.
+- Resultat obtenu (AUC 0.793, leger mieux que Random Forest 0.776) : le
+  boosting exploite un peu mieux le meme signal que Random Forest voyait
+  deja (ecart modeste, +0.017 d'AUC) - ce n'est pas un algorithme qui
+  debloque une information invisible aux autres, juste un assemblage plus
+  fin sur le meme materiau. L'ecart RF->XGBoost, bien plus petit que
+  l'ecart LogReg->RF, indique qu'on approche d'un PLAFOND DE SIGNAL
+  EXPLOITABLE avec ces 16 features, pas qu'il reste une grosse marge de
+  progression algorithmique a aller chercher.
+
+CATBOOST (voir ADDENDUM, section 4, pour le detail du test)
+- Boosting sequentiel comme XGBoost, mais avec deux differences cles :
+  1) "Ordered boosting" - au lieu de calculer le residu d'une ligne avec un
+     modele deja entraine sur cette meme ligne (source subtile de sur-
+     apprentissage/fuite d'information dans le boosting classique), CatBoost
+     estime chaque residu avec un modele qui n'a vu, dans un ordre aleatoire,
+     que les lignes precedentes. Effet regularisant naturel.
+  2) Arbres "oblivious" (symetriques) - meme feature/seuil de decoupe a
+     tous les noeuds d'un meme niveau de l'arbre. Plus contraint qu'un arbre
+     XGBoost classique, ce qui limite aussi le sur-apprentissage.
+- Point important : l'avantage habituel de CatBoost (gestion native des
+  variables categorielles) NE joue quasiment aucun role ici, puisque le
+  script 06 a deja tout encode en 0/1 avant la modelisation. Le gain observe
+  vient donc de la regularisation (ordered boosting + arbres symetriques),
+  pas d'un traitement different des categories.
+
+================================================================
+2. LOGIQUE DES TESTS MENES
+================================================================
+
+SPLIT TRAIN/TEST 80/20 STRATIFIE
+20% des lignes (29 689) sont mises de cote et jamais montrees pendant
+l'entrainement, pour mesurer une vraie capacite de generalisation plutot
+qu'une simple memorisation du jeu d'entrainement. "Stratifie" = meme
+proportion 75,4%/24,5% de defaut forcee dans le train et le test, pour ne
+pas fausser la comparaison entre modeles par un decoupage malchanceux.
+Meme split (meme random_state=42) reutilise pour les 4 modeles, y compris
+CatBoost, pour une comparaison strictement equitable.
+
+VALIDATION CROISEE 5-FOLD STRATIFIEE (sur le train uniquement)
+Le train est decoupe en 5 blocs egaux (meme proportion de defaut dans
+chacun) ; on entraine 5 fois sur 4 blocs en testant sur le 5e restant, a
+tour de role. Donne une moyenne ET un ecart-type, pas un seul chiffre.
+Les ecarts-types obtenus (0.0036 a 0.0048, tres faibles) montrent que la
+performance ne depend quasiment pas du decoupage particulier des donnees -
+resultat stable, pas un coup de chance sur un split precis. CatBoost obtient
+meme l'ecart-type le plus bas des 4 modeles (0.0036, a egalite avec Random
+Forest) : sa performance est la plus reguliere d'un fold a l'autre.
+
+CLASS_WEIGHT="BALANCED" / SCALE_POS_WEIGHT
+Sans correction, un modele pourrait predire "Rembourse" presque tout le
+temps et sembler correct a 75% juste en ignorant la classe minoritaire
+(Defaut). Cette ponderation force les erreurs sur la classe minoritaire a
+peser plus lourd pendant l'entrainement, pour obliger le modele a vraiment
+apprendre a distinguer les deux classes plutot que de les ignorer. Meme
+ratio scale_pos_weight applique a XGBoost et CatBoost (calcule une seule
+fois sur y_train, reutilise pour les deux).
+
+================================================================
+3. INTERPRETATION LITTERALE DES 4 METRIQUES (sur CatBoost, le meilleur)
+================================================================
+
+AUC-ROC = 0.805
+Si on tire au hasard un client qui a fait defaut et un client qui a
+rembourse, le modele classe correctement lequel est le plus risque dans
+~80% des cas (contre ~79% avec XGBoost). Seule metrique independante d'un
+seuil de decision - elle juge le pouvoir de classement pur du modele, avant
+toute regle "accorde/refuse".
+
+PRECISION = 0.614
+Parmi tous les clients que le modele etiquette "a risque de defaut",
+environ 61% le sont vraiment - les 39% restants sont de bons payeurs
+signales a tort (cout metier : refuser ou sur-etudier des clients
+solvables). Legere amelioration par rapport a XGBoost (60,1%).
+
+RAPPEL = 0.630
+Parmi tous les clients qui font reellement defaut, le modele en detecte
+environ 63% - il en rate 37% (cout metier : argent prete qui ne reviendra
+pas, la metrique la plus sensible pour une institution de microfinance).
+Amelioration la plus visible par rapport a XGBoost (61,9% -> 63,0%).
+
+F1 = 0.622
+Moyenne harmonique de precision et rappel, utile ici parce que les deux
+sont proches (0.614 et 0.630) - le modele n'est pas biaise a sur-favoriser
+l'un au detriment de l'autre.
+
+================================================================
+4. ADDENDUM - TEST CATBOOST (vendredi 14 aout 2026)
+================================================================
+Contexte : CatBoost n'etait pas prevu au planning initial (qui listait
+uniquement Regression Logistique, Random Forest, XGBoost). Teste par
+prudence avant la sauvegarde definitive, pour verifier qu'aucune alternative
+simple ne faisait mieux que XGBoost avant de figer le choix.
+
+Protocole : strictement identique aux 3 premiers modeles - meme fichier
+d'entree (Loan_Default_Cameroun_Encode.csv), memes 16 features, meme split
+train/test (random_state=42), meme validation croisee 5-fold stratifiee,
+meme logique de ponderation du desequilibre (scale_pos_weight, calcule une
+seule fois et partage avec XGBoost). Aucun parametre ajuste en faveur de
+CatBoost au-dela de ce traitement equivalent - comparaison a armes egales.
+
+Resultat : CatBoost devance XGBoost sur les 4 metriques du jeu de test
+(AUC-ROC 0.805 vs 0.793, F1 0.622 vs 0.610, Precision 0.614 vs 0.601,
+Rappel 0.630 vs 0.619) et affiche l'ecart-type le plus faible en validation
+croisee (0.0036 vs 0.0047) - gain net et stable, pas du bruit statistique.
+
+A noter : l'ecart CatBoost -> XGBoost (+0.012 d'AUC) reste nettement plus
+petit que l'ecart LogReg -> Random Forest (+0.186 d'AUC) et du meme ordre
+que l'ecart Random Forest -> XGBoost (+0.017 d'AUC). Ce nouveau petit gain
+CONFIRME plutot qu'il ne contredit la lecture du PLAFOND DE SIGNAL (section
+1, XGBoost) : meme un algorithme plus regularise n'obtient qu'une
+amelioration marginale, ce qui est coherent avec l'idee que la limite vient
+des 16 features disponibles, pas du choix d'algorithme.
+
+Decision : CatBoost retenu comme modele final du projet. Meme interface
+scikit-learn (fit/predict/predict_proba) que XGBoost, donc aucun impact sur
+la suite du projet (app Streamlit, SHAP, export PDF) - seul le fichier
+sauvegarde et la section 7 du script changent.
+
+================================================================
+LECTURE D'ENSEMBLE HONNETE (pour le rapport / la soutenance)
+================================================================
+Avec CatBoost (seuil par defaut 0.5, pas encore optimise), le modele repere
+environ 6,3 defaillants sur 10 tout en se trompant sur environ 3,9 bons
+clients sur 10 qu'il signale - une amelioration mesurable mais modeste par
+rapport a XGBoost (6,2/10 et 4,0/10), point de depart realiste pour un outil
+d'AIDE a la decision avec supervision humaine, pas un systeme entierement
+automatise.
+
+Le plafond ~0.79-0.81 d'AUC (constant sur les 3 modeles les plus performants,
+malgre des logiques d'entrainement tres differentes) est coherent avec les
+limites deja documentees du projet (voir memoire
+project-scoring-credit-soutenance-risks) : plusieurs variables
+"camerounaises" ont ete exclues faute de signal reel (tontine, mobile money,
+activite saisonniere, region, age, niveau d'education), et le dataset source
+reste un proxy americain recale, pas des donnees camerounaises reelles. Ce
+plafond reflete la limite du signal disponible dans ces 16 features, pas une
+erreur d'implementation ni un choix d'algorithme sous-optimal - a assumer
+explicitement dans le rapport ("limites et hypotheses") plutot qu'a masquer.
+
+Choix du modele final : CatBoost, valide au-dela du planning initial par ce
+test complementaire du 14 aout. Prochaine etape : sauvegarde du modele avec
+joblib (scripts/07_modelisation.py, section 7), pour reutilisation par l'app
+Streamlit sans reentrainement.

@@ -1,32 +1,41 @@
 # %% [markdown]
-# ## Semaine 3 - Etape 1 : modelisation ML (Regression Logistique, Random Forest, XGBoost)
+# ## Semaine 3 : modelisation ML (Regression Logistique, Random Forest,
+# XGBoost, CatBoost) et sauvegarde du modele final
 # Entree  : ../data/processed/Loan_Default_Cameroun_Encode.csv (sortie du script 06)
-# Sortie  : tableau comparatif des 3 modeles (aucune sauvegarde de modele ici -
-#           choix du modele final au point d'equipe du jeudi 13 aout, sauvegarde
-#           prevue vendredi 14 aout, voir docs/Analyse_et_Plan_Projet.docx section 5)
+# Sortie  : tableau comparatif des 4 modeles + modele final sauvegarde avec
+#           joblib dans ../models/, reutilisable par l'app Streamlit
 #
-# Taches (lundi 10 - mercredi 12 aout 2026) :
+# Etape 1 (lundi 10 - mercredi 12 aout 2026) :
 # 1) Separation features (categorie A, 16 colonnes) / cible, split train/test
 #    80/20 stratifie (la cible est desequilibree, 75,4% Rembourse / 24,5% Defaut)
 # 2) Regression Logistique (reference) + validation croisee stratifiee 5-fold
 # 3) Random Forest + validation croisee stratifiee 5-fold
-# 4) XGBoost + validation croisee stratifiee 5-fold (demarre mercredi, tache
-#    prevue mercredi-jeudi dans le plan)
-# 5) Tableau comparatif des metriques (AUC-ROC, F1, Precision, Rappel) des 3
-#    modeles sur le jeu de test - version de travail pour le point d'equipe de
-#    jeudi, le tableau/graphiques officiels (courbes ROC, matrices de confusion)
-#    restent la tache d'Andy (notebook 04_evaluation_modeles.ipynb)
-#
+# 4) XGBoost + validation croisee stratifiee 5-fold
 # Desequilibre de classe traite par class_weight="balanced" (Regression
 # Logistique, Random Forest) et scale_pos_weight (XGBoost) plutot que par
 # sur/sous-echantillonnage, pour ne pas alterer la distribution reelle du jeu
-# d'entrainement.
+# d'entrainement. Resultats (test) : AUC-ROC 0.590 / 0.776 / 0.793 - XGBoost
+# meilleur des 3 prevus au planning initial.
+#
+# Etape 2 (vendredi 14 aout 2026) : test complementaire d'un 4e modele,
+# CatBoost, non prevu au planning initial mais teste avant la sauvegarde
+# definitive pour verifier qu'aucune alternative simple ne fait mieux que
+# XGBoost. Meme protocole exact que les 3 premiers modeles (meme split, meme
+# seed, memes 16 features, scale_pos_weight equivalent pour le desequilibre)
+# afin d'avoir une comparaison equitable. CatBoost devance XGBoost sur les 4
+# metriques (AUC-ROC test 0.805 vs 0.793) et avec une variance plus faible en
+# validation croisee (+/- 0.0036 vs +/- 0.0047) - retenu comme modele final.
+# Le modele CatBoost entraine ci-dessous (sur X_train, celui dont les
+# metriques sont rapportees dans le tableau comparatif) est sauvegarde avec
+# joblib, accompagne de la liste des features, pour reutilisation par l'app
+# Streamlit sans reentrainement.
 
 # %%
 import sys
 
 import numpy as np
 import pandas as pd
+from catboost import CatBoostClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
@@ -194,12 +203,93 @@ resultats["XGBoost"] = {
 print(pd.Series(resultats["XGBoost"]).round(4))
 
 # %% [markdown]
-# ### 5. Tableau comparatif (version de travail)
-# Sert de base au point d'equipe du jeudi 13 aout pour choisir le modele
-# final. Le tableau/graphiques officiels (courbes ROC, matrices de confusion)
-# restent la tache d'Andy, a construire des que ces resultats sont
-# disponibles (notebooks/04_evaluation_modeles.ipynb).
+# ### 5. CatBoost (test complementaire, vendredi 14 aout)
+# Meme traitement du desequilibre (scale_pos_weight, equivalent a
+# class_weight="balanced") et meme protocole de validation croisee que les
+# 3 modeles precedents. allow_writing_files=False evite que CatBoost cree un
+# dossier de travail catboost_info/ (inutile ici et source de conflits quand
+# cross_val_score parallelise les folds).
+
+# %%
+modele_catboost = CatBoostClassifier(
+    iterations=300,
+    scale_pos_weight=ratio_desequilibre,
+    random_seed=RANDOM_SEED,
+    verbose=False,
+    allow_writing_files=False,
+)
+
+scores_cv_catboost = cross_val_score(
+    modele_catboost, X_train, y_train, cv=CV, scoring="roc_auc", n_jobs=-1
+)
+print(
+    f"CatBoost - AUC-ROC (5-fold CV) : "
+    f"{scores_cv_catboost.mean():.4f} +/- {scores_cv_catboost.std():.4f}"
+)
+
+modele_catboost.fit(X_train, y_train)
+y_pred_catboost = modele_catboost.predict(X_test)
+y_proba_catboost = modele_catboost.predict_proba(X_test)[:, 1]
+
+resultats["CatBoost"] = {
+    "AUC-ROC (test)": roc_auc_score(y_test, y_proba_catboost),
+    "F1 (test)": f1_score(y_test, y_pred_catboost),
+    "Precision (test)": precision_score(y_test, y_pred_catboost),
+    "Rappel (test)": recall_score(y_test, y_pred_catboost),
+    "AUC-ROC (5-fold CV, moyenne)": scores_cv_catboost.mean(),
+    "AUC-ROC (5-fold CV, ecart-type)": scores_cv_catboost.std(),
+}
+print(pd.Series(resultats["CatBoost"]).round(4))
+
+# %% [markdown]
+# ### 6. Tableau comparatif final
+# Le tableau/graphiques officiels (courbes ROC, matrices de confusion)
+# restent la tache d'Andy (notebook 04_evaluation_modeles.ipynb). CatBoost
+# devance les 3 autres modeles sur les 4 metriques : retenu comme modele
+# final.
 
 # %%
 tableau_comparatif = pd.DataFrame(resultats).T.round(4)
 print(tableau_comparatif)
+
+# %% [markdown]
+# ### 7. Sauvegarde du modele final (joblib)
+# CatBoost (section 5) est le modele final : meilleur des 4 sur AUC-ROC, F1,
+# Precision et Rappel (test), et validation croisee la plus stable. On
+# sauvegarde le modele deja entraine sur X_train ci-dessus (celui dont les
+# metriques sont rapportees dans le tableau comparatif, pour que le fichier
+# reflete exactement les performances annoncees) avec joblib, accompagne de
+# la liste des features et du nom de la cible pour que l'app Streamlit
+# reconstruise l'entree dans le bon ordre sans avoir a redupliquer cette
+# logique.
+
+# %%
+import os
+
+import joblib
+
+os.makedirs(f"{BASE_DIR}/models", exist_ok=True)
+
+OUTPUT_PATH = f"{BASE_DIR}/models/modele_scoring_credit.joblib"
+
+joblib.dump(
+    {
+        "modele": modele_catboost,
+        "features": FEATURES,
+        "cible": CIBLE,
+        "algorithme": "CatBoost",
+    },
+    OUTPUT_PATH,
+)
+print(f"Modele final sauvegarde : {OUTPUT_PATH}")
+
+# %% [markdown]
+# Verification : rechargement du fichier et controle que les predictions
+# sont identiques a celles calculees plus haut (aucune perte a la
+# serialisation/deserialisation).
+
+# %%
+objet_recharge = joblib.load(OUTPUT_PATH)
+y_proba_recharge = objet_recharge["modele"].predict_proba(X_test[objet_recharge["features"]])[:, 1]
+assert np.allclose(y_proba_recharge, y_proba_catboost), "Predictions differentes apres rechargement !"
+print("Rechargement joblib verifie : predictions identiques.")
