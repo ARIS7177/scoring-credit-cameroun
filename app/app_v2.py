@@ -18,6 +18,7 @@ from datetime import datetime
 import numpy as np
 import joblib
 import os
+from catboost import Pool
 
 # fpdf2 optionnel pour export PDF
 try:
@@ -218,6 +219,7 @@ def init_session_state():
         "dernier_score_model": None,
         "dernier_score_categ": None,
         "dernier_montant_recommande": None,
+        "dernier_facteurs_model": None,
     }
     for cle, valeur in valeurs_par_defaut.items():
         if cle not in st.session_state:
@@ -319,26 +321,122 @@ def construire_features_pour_modele(data):
     return features_array.reshape(1, -1)
 
 
+def calculer_facteurs_shap(features, data):
+    """
+    Calcule les facteurs explicatifs de la prédiction ML à partir des valeurs
+    SHAP natives de CatBoost (get_feature_importance, type="ShapValues").
+
+    Les valeurs SHAP sont dans l'espace du score brut du modèle (log-odds,
+    avant sigmoïde) : leur somme + le biais reconstruit exactement la marge
+    utilisée par predict_proba. Pour les exprimer en "points" sur le score
+    0-100 affiché à l'agent (même unité que evaluer_demande_heuristique),
+    on les multiplie par la dérivée locale de la sigmoïde au point de
+    prédiction (linéarisation). Cette conversion préserve exactement le
+    classement des facteurs par importance ; seule l'amplitude affichée se
+    comprime pour les dossiers très tranchés (score proche de 0 ou 100),
+    ce qui est attendu : à ce niveau de confiance, aucun facteur pris
+    isolément ne suffirait à faire basculer la décision.
+
+    Retourne la même structure que evaluer_demande_heuristique : liste de
+    (nom, valeur, impact_points, explication), triée par impact absolu,
+    limitée aux 5 facteurs les plus déterminants.
+    """
+    try:
+        pool = Pool(features, feature_names=FEATURES_NAMES)
+        shap_row = MODEL.get_feature_importance(pool, type="ShapValues")[0]
+        shap_par_feature = dict(zip(FEATURES_NAMES, shap_row[:-1]))
+
+        marge = shap_row.sum()
+        proba_defaut = 1 / (1 + np.exp(-marge))
+        points_par_unite_marge = -100 * proba_defaut * (1 - proba_defaut)
+
+        def impact(*noms_features):
+            return sum(shap_par_feature[n] for n in noms_features) * points_par_unite_marge
+
+        facteurs = []
+
+        imp = impact("ratio_endettement")
+        facteurs.append((
+            "Ratio d'endettement", f"{data['ratio_endettement']:.0f} %", round(imp),
+            "Bonne capacité résiduelle." if imp >= 0 else "Charges élevées par rapport au revenu.",
+        ))
+
+        imp = impact("revenu_mensuel_fcfa")
+        facteurs.append((
+            "Revenu mensuel", format_fcfa(data["revenu"]), round(imp),
+            "Revenu qui rassure sur la capacité de remboursement." if imp >= 0
+            else "Revenu qui pèse sur la capacité de remboursement.",
+        ))
+
+        imp = impact("montant_pret_fcfa")
+        facteurs.append((
+            "Montant du prêt", format_fcfa(data["montant_demande"]), round(imp),
+            "Montant raisonnable au vu du profil." if imp >= 0 else "Montant élevé au vu du profil.",
+        ))
+
+        imp = impact("duree_mois")
+        facteurs.append((
+            "Durée du prêt", f"{data['duree']} mois", round(imp),
+            "Durée qui limite l'exposition au risque." if imp >= 0
+            else "Durée longue qui augmente l'exposition au risque.",
+        ))
+
+        imp = impact("credit_ouvert")
+        facteurs.append((
+            "Ligne de crédit ouverte", data["ligne_credit"], round(imp),
+            "Aucune autre ligne de crédit en cours." if imp >= 0
+            else "Une autre ligne de crédit déjà ouverte augmente le risque.",
+        ))
+
+        imp = impact("usage_professionnel")
+        facteurs.append((
+            "Usage du crédit", data["usage_credit"], round(imp),
+            "Crédit professionnel, susceptible de générer du revenu." if imp >= 0
+            else "Crédit personnel, sans revenu généré directement.",
+        ))
+
+        noms_objet = [f for f in FEATURES_NAMES if f.startswith("objet_pret_")]
+        imp = impact(*noms_objet)
+        facteurs.append((
+            "Objet du prêt", data["objet"], round(imp),
+            "Cet usage du crédit est statistiquement plus sûr." if imp >= 0
+            else "Cet usage du crédit est statistiquement plus risqué.",
+        ))
+
+        noms_secteur = [f for f in FEATURES_NAMES if f.startswith("secteur_activite_")]
+        imp = impact(*noms_secteur)
+        facteurs.append((
+            "Secteur d'activité", data["secteur"], round(imp),
+            "Secteur au profil de risque favorable." if imp >= 0
+            else "Secteur au profil de risque plus élevé.",
+        ))
+
+        return sorted(facteurs, key=lambda f: abs(f[2]), reverse=True)[:5]
+
+    except Exception:
+        return []
+
+
 def predire_score_ml(data):
     """
     Effectue une prédiction avec le modèle ML.
-    Retourne : (score_0_100, categorie_risque, couleur, proba_defaut)
+    Retourne : (score_0_100, categorie_risque, couleur, proba_defaut, facteurs)
     """
     if MODEL is None:
-        return None, None, None, None
-    
+        return None, None, None, None, []
+
     try:
         features = construire_features_pour_modele(data)
-        
+
         # Prédiction : retourne [proba_0, proba_1]
         proba = MODEL.predict_proba(features)[0]
         proba_defaut = proba[1]  # Probabilité de défaut (classe 1)
-        
+
         # Convertir en score 0-100 : score = (1 - proba_defaut) * 100
         # Plus la probabilité de défaut est basse, plus le score est haut
         score_0_100 = round((1 - proba_defaut) * 100)
         score_0_100 = max(0, min(100, score_0_100))  # Clamp à [0, 100]
-        
+
         # Catégorie et couleur
         if score_0_100 >= 70:
             categorie = "FAIBLE"
@@ -349,12 +447,14 @@ def predire_score_ml(data):
         else:
             categorie = "ÉLEVÉ"
             couleur = "#dc2626"  # Rouge
-        
-        return score_0_100, categorie, couleur, proba_defaut * 100
-    
+
+        facteurs = calculer_facteurs_shap(features, data)
+
+        return score_0_100, categorie, couleur, proba_defaut * 100, facteurs
+
     except Exception as e:
         st.error(f"Erreur lors de la prédiction : {e}")
-        return None, None, None, None
+        return None, None, None, None, []
 
 
 def recommander_montant_maximum(score, revenu, duree_mois):
@@ -583,7 +683,19 @@ def generer_pdf(data, resultat, montant_accorde, taux, mensualite, score_model=N
     deux_colonnes("Probabilité de défaut", f"{resultat['proba_defaut']:.1f} %",
                   "Ratio d'endettement", f"{data['ratio_endettement']:.0f} %")
     pdf.ln(3)
-    
+
+    if resultat.get("facteurs"):
+        titre_section("FACTEURS EXPLICATIFS DU SCORE")
+        for nom, valeur, impact, explication in resultat["facteurs"]:
+            sens = "reduit" if impact >= 0 else "augmente"
+            pdf.set_font("Helvetica", "B", 9.5)
+            pdf.cell(0, 5.5, texte(f"{nom} : {valeur}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.set_font("Helvetica", "", 9)
+            pdf.multi_cell(0, 4.3, texte(
+                f"   -> {sens} le score de {abs(impact)} pt(s) sur 100 - {explication}"
+            ), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.ln(1.5)
+
     titre_section("AVERTISSEMENT LEGAL")
     pdf.set_font("Helvetica", "", 8.5)
     pdf.multi_cell(0, 4.3, texte(
@@ -980,7 +1092,7 @@ def page_nouvelle_demande():
                 "ratio_endettement": ratio,
             }
             
-            score_model, categorie_model, couleur_model, proba_defaut_model = predire_score_ml(data_ml)
+            score_model, categorie_model, couleur_model, proba_defaut_model, facteurs_model = predire_score_ml(data_ml)
             
             if score_model is not None:
                 # Afficher les résultats ML
@@ -1027,6 +1139,7 @@ def page_nouvelle_demande():
                 st.session_state.dernier_score_model = score_model
                 st.session_state.dernier_score_categ = categorie_model
                 st.session_state.dernier_montant_recommande = montant_recommande
+                st.session_state.dernier_facteurs_model = facteurs_model
                 
                 st.caption(
                     "📊 La recommandation est basée sur le modèle CatBoost v2 entraîné sur l'historique "
@@ -1127,7 +1240,7 @@ def page_resultats():
             "couleur": couleur,
             "decision": decision,
             "proba_defaut": proba_defaut,
-            "facteurs": [],  # Pas de détail de facteurs pour ML
+            "facteurs": st.session_state.dernier_facteurs_model or [],
         }
         montant_recommande = st.session_state.dernier_montant_recommande or st.session_state.demande_data.get("montant_demande", 0)
         score_source = "🤖 Modèle ML (CatBoost)"
@@ -1317,7 +1430,14 @@ def page_export_pdf():
             st.metric("Catégorie", resultat["categorie"])
         with c3:
             st.metric("Décision", resultat["decision"])
-        
+
+        if resultat.get("facteurs"):
+            st.divider()
+            st.markdown("**🔍 FACTEURS EXPLICATIFS DU SCORE**")
+            for nom, valeur, impact, explication in resultat["facteurs"]:
+                signe = "🟢 réduit" if impact >= 0 else "🔴 augmente"
+                st.write(f"- **{nom}** ({valeur}) — {signe} le score de {abs(impact)} pt(s) · {explication}")
+
         st.divider()
         st.caption("Généré par Système de Scoring Crédit Cameroun V2.0 (ML - CatBoost)")
 
