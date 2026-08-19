@@ -8,6 +8,9 @@ Intégration du modèle CatBoost sauvegardé (v1) :
     • Calcul de la catégorie de risque à partir du score
     • Simulation du montant maximum recommandé selon score, revenu et durée
 
+INTÉGRATION SHAP PAR ANDY :
+    • Waterfall plot et graphique d'importance des variables
+    • Affiché après le score dans la page des résultats
 =====================================================================
 """
 
@@ -18,6 +21,12 @@ from datetime import datetime
 import numpy as np
 import joblib
 import os
+import sys
+
+# Ajouter la racine du projet au chemin Python
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import shap_view  # Module SHAP d'Andy (à la racine)
 from catboost import Pool
 
 # fpdf2 optionnel pour export PDF
@@ -36,7 +45,11 @@ except ImportError:
 def load_model():
     """Charge le modèle CatBoost sauvegardé une seule fois."""
     try:
-        model_path = "../models/modele_scoring_credit.joblib"
+        # Construire le chemin absolu vers models/modele_scoring_credit.joblib
+        # __file__ = app/app_v2.py, on remonte d'un niveau avec dirname deux fois
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        model_path = os.path.join(base_dir, "models", "modele_scoring_credit.joblib")
+        
         if os.path.exists(model_path):
             return joblib.load(model_path)
         else:
@@ -281,6 +294,32 @@ def reinitialiser_formulaire():
     st.rerun()
 
 
+def _libelle_correspond(valeur_depuis_feature, valeur_attendue):
+    """
+    Compare une valeur de catégorie extraite d'un nom de colonne one-hot
+    (ex. "Salarié formel" tiré de "secteur_activite_Salarié formel") à la
+    valeur attendue, en tolérant un double encodage UTF-8 des accents.
+
+    Bug constaté sur models/modele_scoring_credit.joblib : les colonnes
+    secteur_activite_Commerce/Négoce, _Profession libérale et _Salarié
+    formel sont enregistrées mal encodées ("SalariÃ© formel" au lieu de
+    "Salarié formel") - corruption déjà présente dans le CSV source
+    (data/processed/Loan_Default_Cameroun_Encode.csv), pas introduite ici.
+    Sans cette tolérance, ces 3 secteurs (dont "Salarié formel", un des
+    plus courants) ne sont jamais reconnus : la colonne reste à 0 quel
+    que soit le secteur réellement déclaré par le client, ce qui fausse
+    silencieusement le score pour ces clients.
+    """
+    if valeur_depuis_feature == valeur_attendue:
+        return True
+    try:
+        if valeur_depuis_feature.encode("latin-1").decode("utf-8") == valeur_attendue:
+            return True
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        pass
+    return False
+
+
 def construire_features_pour_modele(data):
     """
     Construit le vecteur de features pour le modèle ML à partir des données du formulaire.
@@ -303,7 +342,7 @@ def construire_features_pour_modele(data):
     for feat_name in FEATURES_NAMES:
         if feat_name.startswith('objet_pret_'):
             objet_val = feat_name.replace('objet_pret_', '')
-            feature_dict[feat_name] = 1 if objet_val == objet_mapped else 0
+            feature_dict[feat_name] = 1 if _libelle_correspond(objet_val, objet_mapped) else 0
     
     # --- One-hot encoding secteur_activite ---
     secteur_raw = data.get('secteur', 'Autre')
@@ -311,7 +350,7 @@ def construire_features_pour_modele(data):
     for feat_name in FEATURES_NAMES:
         if feat_name.startswith('secteur_activite_'):
             secteur_val = feat_name.replace('secteur_activite_', '').replace('_', ' ')
-            feature_dict[feat_name] = 1 if secteur_val == secteur_mapped else 0
+            feature_dict[feat_name] = 1 if _libelle_correspond(secteur_val, secteur_mapped) else 0
     
     # --- Remplir l'array dans l'ordre des FEATURES_NAMES ---
     for i, feat_name in enumerate(FEATURES_NAMES):
@@ -325,21 +364,6 @@ def calculer_facteurs_shap(features, data):
     """
     Calcule les facteurs explicatifs de la prédiction ML à partir des valeurs
     SHAP natives de CatBoost (get_feature_importance, type="ShapValues").
-
-    Les valeurs SHAP sont dans l'espace du score brut du modèle (log-odds,
-    avant sigmoïde) : leur somme + le biais reconstruit exactement la marge
-    utilisée par predict_proba. Pour les exprimer en "points" sur le score
-    0-100 affiché à l'agent (même unité que evaluer_demande_heuristique),
-    on les multiplie par la dérivée locale de la sigmoïde au point de
-    prédiction (linéarisation). Cette conversion préserve exactement le
-    classement des facteurs par importance ; seule l'amplitude affichée se
-    comprime pour les dossiers très tranchés (score proche de 0 ou 100),
-    ce qui est attendu : à ce niveau de confiance, aucun facteur pris
-    isolément ne suffirait à faire basculer la décision.
-
-    Retourne la même structure que evaluer_demande_heuristique : liste de
-    (nom, valeur, impact_points, explication), triée par impact absolu,
-    limitée aux 5 facteurs les plus déterminants.
     """
     try:
         pool = Pool(features, feature_names=FEATURES_NAMES)
@@ -430,23 +454,22 @@ def predire_score_ml(data):
 
         # Prédiction : retourne [proba_0, proba_1]
         proba = MODEL.predict_proba(features)[0]
-        proba_defaut = proba[1]  # Probabilité de défaut (classe 1)
+        proba_defaut = proba[1]
 
         # Convertir en score 0-100 : score = (1 - proba_defaut) * 100
-        # Plus la probabilité de défaut est basse, plus le score est haut
         score_0_100 = round((1 - proba_defaut) * 100)
-        score_0_100 = max(0, min(100, score_0_100))  # Clamp à [0, 100]
+        score_0_100 = max(0, min(100, score_0_100))
 
         # Catégorie et couleur
         if score_0_100 >= 70:
             categorie = "FAIBLE"
-            couleur = "#16a34a"  # Vert
+            couleur = "#16a34a"
         elif score_0_100 >= 40:
             categorie = "MODÉRÉ"
-            couleur = "#d97706"  # Orange
+            couleur = "#d97706"
         else:
             categorie = "ÉLEVÉ"
-            couleur = "#dc2626"  # Rouge
+            couleur = "#dc2626"
 
         facteurs = calculer_facteurs_shap(features, data)
 
@@ -460,15 +483,12 @@ def predire_score_ml(data):
 def recommander_montant_maximum(score, revenu, duree_mois):
     """
     Recommande un montant maximum de prêt selon le score, le revenu et la durée.
-    Formule : montant_max = revenu * ratio_capacite * duree_mois / 12
-    où ratio_capacite dépend du score.
     """
     if score is None or revenu <= 0:
         return 0
     
-    # Ratio de capacité de remboursement selon le score
     if score >= 70:
-        ratio = 12  # Peut emprunter jusqu'à 12 mois de revenu
+        ratio = 12
     elif score >= 55:
         ratio = 9
     elif score >= 40:
@@ -476,17 +496,13 @@ def recommander_montant_maximum(score, revenu, duree_mois):
     else:
         ratio = 3
     
-    # Ajustement selon la durée (pour un crédit plus court, moins de montant)
-    duree_factor = min(duree_mois / 12, 1.5)  # Max 1.5x pour durée longue
-    
+    duree_factor = min(duree_mois / 12, 1.5)
     montant_max = revenu * ratio * duree_factor
-    return int(montant_max / 10000) * 10000  # Arrondir à 10k FCFA
+    return int(montant_max / 10000) * 10000
 
 
 def evaluer_demande_heuristique(data):
-    """
-    Fallback heuristique simple (au cas où le modèle ne serait pas disponible).
-    """
+    """Fallback heuristique simple."""
     facteurs = []
     score = 40
     
@@ -747,7 +763,6 @@ def render_sidebar():
         st.caption(f"**Agent :** {st.session_state.agent_nom}")
         st.caption(st.session_state.institution)
         
-        # Status du modèle
         st.divider()
         if MODEL:
             st.success("✅ Modèle ML chargé", icon="✨")
@@ -949,6 +964,7 @@ def page_tableau_de_bord():
             else:
                 st.error("❌ Modèle non disponible")
                 st.caption("Utilisation du mode fallback")
+        
 
 
 # =====================================================================
@@ -1061,7 +1077,6 @@ def page_nouvelle_demande():
         st.divider()
         st.markdown("### 🤖 Prédiction ML (temps réel)")
         
-        # Vérifier si on peut faire une prédiction
         champs_pour_ml = {
             "revenu": revenu,
             "charges": charges,
@@ -1079,7 +1094,6 @@ def page_nouvelle_demande():
         if champs_ml_manquants:
             st.info(f"⏳ Complétez les champs obligatoires pour activer la prédiction ML : {', '.join(champs_ml_manquants)}")
         else:
-            # Effectuer la prédiction ML
             data_ml = {
                 "revenu": revenu,
                 "charges": charges,
@@ -1095,7 +1109,6 @@ def page_nouvelle_demande():
             score_model, categorie_model, couleur_model, proba_defaut_model, facteurs_model = predire_score_ml(data_ml)
             
             if score_model is not None:
-                # Afficher les résultats ML
                 col_score, col_info = st.columns([1, 1.5])
                 
                 with col_score:
@@ -1108,7 +1121,6 @@ def page_nouvelle_demande():
                     st.metric("Catégorie de risque", categorie_model)
                     st.metric("Prob. défaut estimée", f"{proba_defaut_model:.1f} %")
                     
-                    # Décision basée sur le score
                     if score_model >= 65:
                         decision_ml = "✅ ACCORDÉ"
                         decision_color = "green"
@@ -1201,7 +1213,7 @@ def page_nouvelle_demande():
 # 9. PAGE 4 — RÉSULTAT DE L'ANALYSE
 # =====================================================================
 def page_resultats():
-    """Affiche les résultats avec score ML."""
+    """Affiche les résultats avec score ML + graphiques SHAP."""
     render_sidebar()
     render_entete()
     
@@ -1289,7 +1301,7 @@ def page_resultats():
         if resultat.get("facteurs"):
             st.write("")
             with st.container(border=True):
-                st.subheader("Facteurs influençants")
+                st.subheader("Facteurs influençants (SHAP)")
                 for i, (nom, valeur, impact, explication) in enumerate(resultat["facteurs"], 1):
                     fc1, fc2 = st.columns([3, 1])
                     with fc1:
@@ -1316,6 +1328,24 @@ def page_resultats():
         with c2:
             st.write(f"**Âge :** {data['age']} ans")
             st.write(f"**Secteur :** {data['secteur']}")
+    
+    # ==========================================================
+    # INTÉGRATION SHAP PAR ANDY - GRAPHIQUES EXPLICATIFS
+    # ==========================================================
+    # Réutilise construire_features_pour_modele() - la même fonction qui a
+    # servi à calculer le score affiché - plutôt que de reconstruire un dict
+    # à la main : shap_view.preparer_donnees_client() ne fait aucun encodage
+    # one-hot, donc lui passer les valeurs brutes de objet_pret/secteur_activite
+    # (ex. "Achat d'équipement") laissait toutes les colonnes objet_pret_*/
+    # secteur_activite_* à 0, pour tous les clients. En partant du vecteur
+    # déjà encodé, les graphiques SHAP portent garantis sur les mêmes valeurs
+    # que le score et les facteurs explicatifs affichés au-dessus.
+    features_ml = construire_features_pour_modele(data)
+    donnees_client = dict(zip(FEATURES_NAMES, features_ml[0]))
+
+    # Afficher les graphiques SHAP
+    shap_view.afficher_explications(donnees_client)
+    # ==========================================================
     
     st.info(
         "**Cet outil est un support à la décision uniquement.** La décision finale reste du "
