@@ -81,7 +81,7 @@ st.markdown(
         }
         section[data-testid="stSidebar"] * {
             color: white !important;
-            background-color: #1f9d55 !important;
+            background-color: #178449 !important;
         }
         
         /* --- Dashboard/Contenu principal --- */
@@ -659,20 +659,18 @@ def generer_pdf(data, resultat, montant_accorde, taux, mensualite, score_model=N
     titre_section("INFORMATIONS DE LA DEMANDE")
     deux_colonnes("ID demande", data["id"], "Date d'analyse", datetime.now().strftime("%d/%m/%Y %Hh%M"))
     deux_colonnes("Agent", st.session_state.agent_nom, "Institution", st.session_state.institution)
-    deux_colonnes("Score (ML)", f"{score_model}/100" if score_model else "N/A", "Risque estimé", resultat["categorie"])
+    deux_colonnes("Score", f"{score_model}/100" if score_model else "N/A", "Risque estimé", resultat["categorie"])
     pdf.ln(3)
     
     titre_section("PROFIL DU DEMANDEUR")
-    pdf.cell(0, 6, texte(f"Nom / Prenom : {data['prenom']} {data['nom']}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.cell(0, 6, texte(f"Adresse : {data['adresse']}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    deux_colonnes("M/Mme", f"{data['prenom']} {data['nom']}", "Adresse", data["adresse"])
     deux_colonnes("Genre", data["genre"], "Tranche d'age", f"{data['age']} ans")
     deux_colonnes("Niveau d'éducation", data["education"], "Secteur d'activité", data["secteur"])
     pdf.ln(3)
     
     titre_section("DEMANDE DE CREDIT")
     deux_colonnes("Montant demandé", format_fcfa(data["montant_demande"]), "Montant accordé", format_fcfa(montant_accorde))
-    pdf.cell(0, 6, texte(f"Durée : {data['duree']} mois"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.cell(0, 6, texte(f"Objet du prêt : {data['objet']}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    deux_colonnes("Objet du prêt", f"{data['objet']} mois", "Durée", f"{data['duree']} mois")
     pdf.ln(3)
     
     titre_section("ANALYSE DU RISQUE (MODELE ML)")
@@ -713,7 +711,7 @@ def generer_pdf(data, resultat, montant_accorde, taux, mensualite, score_model=N
     pdf.ln(3)
     pdf.set_font("Helvetica", "I", 8)
     pdf.set_text_color(150, 150, 150)
-    pdf.cell(0, 6, texte("Genere par Systeme de Scoring Credit Cameroun V2.0"), align="C")
+    pdf.cell(0, 6, texte("Généré par Système de Scoring Credit Cameroun"), align="C")
     
     return bytes(pdf.output())
 
@@ -724,7 +722,7 @@ def generer_pdf(data, resultat, montant_accorde, taux, mensualite, score_model=N
 def render_sidebar():
     """Menu latéral."""
     with st.sidebar:
-        st.markdown("## 🏦 Credit Default System")
+        st.markdown("## Évaluer intelligemment le risque de crédit ")
         
         st.divider()
         pages_menu = [
@@ -750,18 +748,18 @@ def render_sidebar():
         # Status du modèle
         st.divider()
         if MODEL:
-            st.success("✅ Modèle ML chargé", icon="✨")
+            st.success("Modèle ML chargé")
         else:
             st.error("❌ Modèle ML non disponible")
 
 
-def render_entete(sous_titre="Évaluation du risque — Modèle ML intégré"):
+def render_entete(sous_titre="Évaluation du risque de defaut de crédit"):
     """Bandeau d'en-tête."""
     st.markdown(
         f"""
         <div style="background-color:#16233f; padding:14px 22px; border-radius:8px; margin-bottom:20px;">
             <span style="color:white; font-size:1.25em; font-weight:700;">
-                🏦 SYSTÈME DE SCORING CRÉDIT CAMEROUN
+                SYSTÈME DE SCORING CRÉDIT CAMEROUN
             </span><br>
             <span style="color:#c9d3e3; font-size:0.85em;">{sous_titre}</span>
         </div>
@@ -798,7 +796,7 @@ def render_graphique_facteurs(facteurs):
     impacts = [f[2] for f in facteurs]
     couleurs = ["#16a34a" if v >= 0 else "#dc2626" for v in impacts]
     textes = [f"−{v}pp" if v >= 0 else f"+{abs(v)}pp" for v in impacts]
-    
+
     fig = go.Figure(go.Bar(
         x=impacts, y=noms, orientation="h",
         marker_color=couleurs, text=textes, textposition="outside",
@@ -827,14 +825,13 @@ def page_connexion():
         unsafe_allow_html=True,
     )
     
-    _, col_centre, _ = st.columns([1, 1.3, 1])
+    _, col_centre, _ = st.columns([1, 1.8, 1])
     with col_centre:
         st.markdown(
             """
-            <div style='text-align:center; margin-top:30px;'>
-                <span style='font-size:3em;'>🏦</span><br>
-                <h2 style='color:white; margin-bottom:0;'>SYSTÈME DE SCORING CRÉDIT V2</h2>
-                <span style='color:#c9d3e3;'>Cameroun — Avec modèle ML intégré</span>
+            <div style='text-align:center; margin-top:20px;'>
+                <h2 style='color:white; margin-bottom:0;'>SYSTÈME DE SCORING CRÉDIT</h2>
+                <span style='color:#c9d3e3;'>Cameroun — Modèle Catboost intégré</span>
             </div>
             """,
             unsafe_allow_html=True,
@@ -842,8 +839,11 @@ def page_connexion():
         st.write("")
         
         with st.container(border=True):
-            st.markdown("### Connexion agent")
-            identifiant = st.text_input("Identifiant (email ou username)", placeholder="exemple@imf.cm")
+            st.markdown(
+                "<h3 style='text-align: center;'>Connexion agent</h3>",
+                unsafe_allow_html=True
+            )
+            identifiant = st.text_input("Email ou Nom d'utilisateur", placeholder="exemple@imf.cm")
             mot_de_passe = st.text_input("Mot de passe", type="password")
             st.checkbox("Rester connecté")
             
@@ -866,7 +866,7 @@ def page_connexion():
         
         st.markdown(
             "<p style='text-align:center; color:#c9d3e3; font-size:0.85em; margin-top:14px;'>"
-            "Connexion sécurisée — Modèle ML V2</p>",
+            "Connexion sécurisée</p>",
             unsafe_allow_html=True,
         )
 
@@ -875,6 +875,7 @@ def page_connexion():
 # 7. PAGE 2 — TABLEAU DE BORD
 # =====================================================================
 def page_tableau_de_bord():
+   
     """Tableau de bord principal."""
     render_sidebar()
     render_entete()
@@ -890,7 +891,7 @@ def page_tableau_de_bord():
         if st.button("Nouvelle demande", type="primary", width="stretch"):
             go_to("nouvelle_demande")
     
-    st.subheader("Statistiques rapides — Aujourd'hui")
+    st.subheader("Aujourd'hui")
     df = get_historique_demandes()
     jour_recent = df["date"].max()
     du_jour = df[df["date"] == jour_recent]
@@ -941,14 +942,13 @@ def page_tableau_de_bord():
     
     with col_droite:
         with st.container(border=True):
-            st.subheader("Statut du modèle ML")
-            if MODEL:
-                st.success("✅ Modèle CatBoost v2 actif")
-                st.caption(f"Features: {len(FEATURES_NAMES)}")
-                st.caption("Prédictions: en temps réel")
-            else:
-                st.error("❌ Modèle non disponible")
-                st.caption("Utilisation du mode fallback")
+            st.subheader("Dernière demande analysée")
+            derniere = df.sort_values("date", ascending=False).iloc[0]
+            st.metric(f"ID {derniere['id']}", f"{derniere['score']}/100")
+            emoji = "✅" if derniere["statut"] == "Accordé" else ("⏳" if derniere["statut"] == "Étude approfondie" else "❌")
+            st.write(f"{emoji} **Décision : {derniere['statut'].upper()}**")
+            if st.button("Voir le détail →", width="stretch"):
+                go_to("historique")
 
 
 # =====================================================================
@@ -1331,7 +1331,7 @@ def page_resultats():
         if st.button("Nouvelle demande", width="stretch"):
             reinitialiser_formulaire()
     with b3:
-        if st.button("🖨️ Exporter en PDF", type="primary", width="stretch"):
+        if st.button("Exporter en PDF", type="primary", width="stretch"):
             st.session_state.dernier_resultat = resultat
             st.session_state.montant_accorde = montant_accorde
             st.session_state.taux_indicatif = taux_indicatif
@@ -1344,7 +1344,9 @@ def page_resultats():
 # =====================================================================
 def page_export_pdf():
     """Aperçu et export PDF."""
+    render_sidebar()
     render_entete()
+    
     
     data = st.session_state.demande_data
     if not data:
@@ -1356,7 +1358,7 @@ def page_export_pdf():
     taux_indicatif = st.session_state.get("taux_indicatif", 18.5)
     mensualite = st.session_state.get("mensualite", 0)
     
-    st.title("📄 Export PDF — Aperçu avant impression")
+    st.title("Export PDF — Aperçu avant impression")
     st.caption(f"Demande {data['id']} · Statut : {resultat['decision']}")
     
     col1, col2 = st.columns([1, 1])
@@ -1368,7 +1370,7 @@ def page_export_pdf():
             score_model = st.session_state.dernier_score_model
             pdf_bytes = generer_pdf(data, resultat, montant_accorde, taux_indicatif, mensualite, score_model)
             st.download_button(
-                "🖨️ Télécharger le PDF", data=pdf_bytes,
+                "Télécharger le PDF", data=pdf_bytes,
                 file_name=f"rapport_{data['id'].strip('#')}.pdf", mime="application/pdf",
                 type="primary", width="stretch",
             )
@@ -1382,7 +1384,8 @@ def page_export_pdf():
                 padding: 56px 64px !important;
                 box-shadow: 0 0 0 1px #e2e8f0, 0 12px 32px rgba(15, 23, 42, 0.10);
                 border-radius: 3px;
-                background-color: #ffffff;
+                background-color: #ecf0f1;
+                color: #1e293b;
             }
         </style>
         """,
@@ -1390,10 +1393,10 @@ def page_export_pdf():
     )
     
     with st.container(border=True, key="apercu_a4"):
-        st.markdown("<h2 style='text-align:center;'>RAPPORT D'ANALYSE — DEMANDE DE PRÊT</h2>", unsafe_allow_html=True)
+        st.markdown("<h3 style='text-align:center;'>RAPPORT D'ANALYSE — DEMANDE DE PRÊT</h3>", unsafe_allow_html=True)
         st.markdown(
             f"<p style='text-align:center; color:#64748b;'>🏦 {st.session_state.institution} "
-            f"— Système de Scoring Crédit V2.0 (ML)</p>",
+            f"— Système de Scoring Crédit</p>",
             unsafe_allow_html=True,
         )
         st.divider()
@@ -1409,7 +1412,11 @@ def page_export_pdf():
         st.divider()
         
         st.markdown("**👤 PROFIL**")
-        st.write(f"**{data['prenom']} {data['nom']}** · {data['adresse']}")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.write(f"M/Mme **{data['prenom']} {data['nom']}**")
+        with c2:
+            st.write(f"Adresse : {data['adresse']}")
         st.divider()
         
         st.markdown("**💰 DEMANDE**")
@@ -1422,7 +1429,7 @@ def page_export_pdf():
             st.write(f"Taux : {taux_indicatif} %")
         st.divider()
         
-        st.markdown("**✅ ANALYSE DU RISQUE (ML V2)**")
+        st.markdown("**✅ ANALYSE DU RISQUE**")
         c1, c2, c3 = st.columns(3)
         with c1:
             st.metric("Score", f"{resultat['score']}/100")
@@ -1439,7 +1446,7 @@ def page_export_pdf():
                 st.write(f"- **{nom}** ({valeur}) — {signe} le score de {abs(impact)} pt(s) · {explication}")
 
         st.divider()
-        st.caption("Généré par Système de Scoring Crédit Cameroun V2.0 (ML - CatBoost)")
+        st.caption("Généré par Système de Scoring Crédit Cameroun", text_alignment="center")
 
 
 # =====================================================================
@@ -1502,7 +1509,7 @@ def page_parametres():
         nouveau_nom = st.text_input("Nom de l'agent", value=st.session_state.agent_nom)
     with c2:
         nouvelle_institution = st.text_input("Institution", value=st.session_state.institution)
-    if st.button("Enregistrer les modifications"):
+    if st.button("Enregistrer"):
         st.session_state.agent_nom = nouveau_nom
         st.session_state.institution = nouvelle_institution
         st.success("Profil mis à jour.")
