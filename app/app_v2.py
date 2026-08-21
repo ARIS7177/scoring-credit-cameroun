@@ -1113,7 +1113,27 @@ def page_nouvelle_demande():
                 st.write("Vecteur de features construit :")
                 st.write(dict(zip(FEATURES_NAMES, _features_debug[0].tolist())))
                 st.write("MODEL est None ?", MODEL is None)
+                st.write("Type du modele :", str(type(MODEL)))
+                st.write("Nombre d'arbres (tree_count_) :", getattr(MODEL, "tree_count_", "non disponible"))
                 st.write("Nombre de FEATURES_NAMES :", len(FEATURES_NAMES))
+
+                _proba_reelle = MODEL.predict_proba(_features_debug)[0]
+                st.write("predict_proba sur le vecteur reel du formulaire :", _proba_reelle.tolist())
+
+                _vec_risque = np.zeros((1, len(FEATURES_NAMES)))
+                _vec_risque[0][FEATURES_NAMES.index("revenu_mensuel_fcfa")] = 100000
+                _vec_risque[0][FEATURES_NAMES.index("montant_pret_fcfa")] = 50000000
+                _vec_risque[0][FEATURES_NAMES.index("ratio_endettement")] = 90
+                _vec_risque[0][FEATURES_NAMES.index("duree_mois")] = 60
+
+                _vec_sur = np.zeros((1, len(FEATURES_NAMES)))
+                _vec_sur[0][FEATURES_NAMES.index("revenu_mensuel_fcfa")] = 5000000
+                _vec_sur[0][FEATURES_NAMES.index("montant_pret_fcfa")] = 100000
+                _vec_sur[0][FEATURES_NAMES.index("ratio_endettement")] = 5
+                _vec_sur[0][FEATURES_NAMES.index("duree_mois")] = 6
+
+                st.write("Test A - profil tres risque (code en dur) :", MODEL.predict_proba(_vec_risque)[0].tolist())
+                st.write("Test B - profil tres sur (code en dur) :", MODEL.predict_proba(_vec_sur)[0].tolist())
 
             if score_model is not None:
                 col_score, col_info = st.columns([1, 1.5])
