@@ -1107,6 +1107,14 @@ def page_nouvelle_demande():
 
             score_model, categorie_model, couleur_model, proba_defaut_model, facteurs_model = predire_score_ml(data_ml)
 
+            with st.expander("🔧 Debug temporaire (a retirer une fois le bug identifie)"):
+                st.write("data_ml envoye a predire_score_ml :", data_ml)
+                _features_debug = construire_features_pour_modele(data_ml)
+                st.write("Vecteur de features construit :")
+                st.write(dict(zip(FEATURES_NAMES, _features_debug[0].tolist())))
+                st.write("MODEL est None ?", MODEL is None)
+                st.write("Nombre de FEATURES_NAMES :", len(FEATURES_NAMES))
+
             if score_model is not None:
                 col_score, col_info = st.columns([1, 1.5])
 
