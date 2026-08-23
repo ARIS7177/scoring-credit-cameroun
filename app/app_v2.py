@@ -441,6 +441,43 @@ def calculer_facteurs_shap(features, data):
         return []
 
 
+def generer_resume_decision(decision, facteurs, prenom):
+    """
+    Genere une synthese courte (1-2 phrases), en langage clair et sans
+    jargon technique, expliquant la decision a partir de la capacite de
+    remboursement du demandeur. Reutilise les explications deja
+    redigees dans `facteurs` (calculer_facteurs_shap ou
+    evaluer_demande_heuristique), en ne retenant que celles qui vont
+    dans le sens de la decision - pas la liste complete des 5 facteurs
+    deja affichee par ailleurs, juste l'essentiel pour un agent presse.
+    """
+    prenom = prenom or "Le demandeur"
+
+    if decision == "ACCORDÉ":
+        intro = (
+            f"{prenom} présente une situation financière qui permet d'envisager "
+            f"sereinement le remboursement de ce crédit dans les délais prévus."
+        )
+        pertinents = [f for f in facteurs if f[2] >= 0]
+    elif decision == "REFUSÉ":
+        intro = (
+            f"La situation actuelle de {prenom} ne permet pas d'assurer ce "
+            f"remboursement dans de bonnes conditions."
+        )
+        pertinents = [f for f in facteurs if f[2] < 0]
+    else:
+        intro = (
+            f"La capacité de {prenom} à assumer ce remboursement reste incertaine "
+            f"et mérite un examen complémentaire."
+        )
+        pertinents = list(facteurs)
+
+    pertinents = sorted(pertinents, key=lambda f: abs(f[2]), reverse=True)[:2]
+    raisons = " ".join(f[3] for f in pertinents)
+
+    return f"{intro} {raisons}".strip()
+
+
 def predire_score_ml(data):
     """
     Effectue une prédiction avec le modèle ML.
@@ -697,6 +734,11 @@ def generer_pdf(data, resultat, montant_accorde, taux, mensualite, score_model=N
     deux_colonnes("Probabilité de défaut", f"{resultat['proba_defaut']:.1f} %",
                   "Ratio d'endettement", f"{data['ratio_endettement']:.0f} %")
     pdf.ln(3)
+
+    if resultat.get("resume"):
+        pdf.set_font("Helvetica", "I", 9.5)
+        pdf.multi_cell(0, 4.6, texte(resultat["resume"]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.ln(2)
 
     if resultat.get("facteurs"):
         titre_section("FACTEURS EXPLICATIFS DU SCORE")
@@ -1289,7 +1331,11 @@ def page_resultats():
         resultat = evaluer_demande_heuristique(data)
         montant_recommande = st.session_state.demande_data.get("montant_demande", 0)
         score_source = "📊 Système heuristique"
-    
+
+    resultat["resume"] = generer_resume_decision(
+        resultat["decision"], resultat.get("facteurs") or [], data.get("prenom")
+    )
+
     st.title("Résultat de l'analyse")
     st.caption(f"ID : {data['id']} · Source : {score_source} · Statut : OK")
     
@@ -1312,7 +1358,9 @@ def page_resultats():
             else:
                 st.error(f"DÉCISION : {resultat['decision']}")
                 montant_accorde = 0
-            
+
+            st.caption(resultat["resume"])
+
             taux_indicatif = 18.5 if resultat["score"] >= 55 else 22.0
             mensualite = calculer_mensualite(montant_accorde, taux_indicatif, data["duree"]) if montant_accorde else 0
             
@@ -1495,6 +1543,9 @@ def page_export_pdf():
             st.metric("Catégorie", resultat["categorie"])
         with c3:
             st.metric("Décision", resultat["decision"])
+
+        if resultat.get("resume"):
+            st.caption(resultat["resume"])
 
         if resultat.get("facteurs"):
             st.divider()
