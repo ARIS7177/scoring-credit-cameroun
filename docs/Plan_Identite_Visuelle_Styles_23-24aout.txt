@@ -1,0 +1,149 @@
+SCORING CREDIT CAMEROUN - PLAN : IDENTITE VISUELLE, STYLES ET MISE EN FORME
+Semaine de marge, a partir de dimanche 23 / lundi 24 aout 2026 (Aristide)
+Fichier source : app/app_v2.py
+================================================================
+
+OBJECTIF
+--------
+Rendre l'application plus chaleureuse et attractive (demande de l'equipe,
+point 3.2 de la liste de correctifs du 21 aout), et lui donner une
+identite propre : un nom et un logo, au lieu du texte generique actuel
+"SYSTEME DE SCORING CREDIT CAMEROUN".
+
+Perimetre volontairement limite a la forme, pas au fond : aucune logique
+metier, aucun calcul, aucune page nouvelle ne doit changer dans cette
+tache. Objectif = meme app, meilleure presentation.
+
+================================================================
+1. ETAT ACTUEL (audit rapide, pour ne pas repartir de zero)
+================================================================
+
+Palette de couleurs utilisee aujourd'hui (eparpillee dans le code, jamais
+centralisee) :
+- Bandeau d'en-tete / sidebar (etat initial) : #16233f (bleu marine fonce)
+- Sidebar (version Marie-Therese) : #178449 (vert)
+- Score FAIBLE risque : #16a34a (vert)
+- Score MODERE : #d97706 (orange)
+- Score ELEVE risque : #dc2626 (rouge)
+- Apercu PDF (fond) : #ecf0f1 (gris tres clair) / texte #1e293b
+- Page de connexion : degrade #0f2b21 -> #14243f (vert fonce vers bleu
+  marine)
+
+Constat : la palette n'est pas fausse (le code couleur du score
+vert/orange/rouge est un bon reflexe, a garder tel quel - c'est un
+signal metier, pas juste esthetique), mais elle n'est choisie nulle
+part de facon centralisee ni justifiee - couleurs codees en dur a
+chaque endroit (`st.markdown` avec du HTML/CSS inline un peu partout).
+
+Police : Helvetica par defaut dans le PDF (fpdf2) ; pour l'app
+elle-meme, police par defaut de Streamlit (systeme), jamais choisie
+explicitement.
+
+Emojis utilises comme icones un peu partout (🏦 ✅ ❌ 📊 💰 🖨️...) - a
+la fois signe "pas encore fini/poli" et risque d'incoherence (rendu
+different selon navigateur/OS).
+
+================================================================
+2. CE QU'IL FAUT GARDER (contraintes a respecter)
+================================================================
+
+- Le code couleur du score (vert = faible risque, orange = modere,
+  rouge = eleve) est un signal metier standard en scoring credit - a
+  conserver absolument, meme si les teintes exactes changent.
+- Aucune regression fonctionnelle : navigation, formulaire, prediction
+  ML, export PDF doivent continuer a fonctionner exactement pareil apres
+  la refonte visuelle. Toujours retester le parcours complet
+  (connexion -> nouvelle demande -> resultats -> export PDF) apres
+  chaque changement de style.
+- Coordination avec Andy et Marie-Therese : `app_v2.py` est un fichier
+  partage, deja source de plusieurs conflits cette semaine. Prevenir
+  l'equipe avant de commencer (fichier verrouille temporairement le
+  temps de la refonte, ou travailler par petits commits frequents pour
+  limiter la divergence).
+- Le PDF (`generer_pdf`) utilise fpdf2/Helvetica, pas du CSS - la
+  refonte visuelle de l'app (Streamlit/HTML) et celle du PDF sont deux
+  chantiers distincts avec des outils differents. Prevoir du temps pour
+  les deux, pas seulement pour l'app a l'ecran.
+
+================================================================
+3. TACHES CONCRETES
+================================================================
+
+A. Nom et logo (a faire en premier - conditionne le reste)
+   - Choisir un nom pour l'application (remplace le texte generique
+     "SYSTEME DE SCORING CREDIT CAMEROUN"). Le nom apparait a plusieurs
+     endroits : page de connexion, bandeau d'en-tete (render_entete),
+     sidebar (render_sidebar), pied de page du PDF, titre de l'onglet
+     navigateur (st.set_page_config, page_title).
+   - Concevoir un logo simple (peut etre une icone/monogramme plutot
+     qu'une image complexe - plus simple a integrer et a garder net a
+     toutes les tailles). Format PNG avec fond transparent recommande.
+   - Emplacements a mettre a jour une fois le nom/logo choisis :
+     st.set_page_config (page_title, page_icon), page_connexion(),
+     render_entete(), render_sidebar(), generer_pdf() (pied de page),
+     app/README.md.
+
+B. Palette de couleurs centralisee
+   - Definir une palette limitee (3-5 couleurs de marque + les 3
+     couleurs de score deja existantes, inchangees) plutot que les
+     couleurs eparpillees actuelles.
+   - Envisager de centraliser ces couleurs en haut du fichier (constantes
+     Python, ex. COULEUR_PRIMAIRE, COULEUR_FOND, COULEUR_TEXTE...)
+     reutilisees partout plutot que des codes hexadecimaux repetes a
+     chaque `st.markdown`.
+
+C. Typographie
+   - Choisir une police coherente pour l'app (Streamlit permet d'injecter
+     une police via st.markdown/CSS, ex. Google Fonts - a verifier que
+     Streamlit Community Cloud autorise le chargement externe, sinon
+     rester sur une police systeme sobre).
+   - Choisir/valider la police du PDF (Helvetica actuel est correct et
+     sobre - peut etre garde tel quel si le temps manque, ce n'est pas
+     prioritaire face au reste).
+
+D. Remplacement des emojis par une iconographie coherente
+   - Soit garder les emojis mais les limiter a un usage tres cible
+     (statuts uniquement : succes/erreur), soit les remplacer par des
+     icones vectorielles coherentes. A trancher selon le temps
+     disponible - impact visuel fort pour un cout de mise en oeuvre
+     variable.
+
+E. Chaleur et lisibilite generale
+   - Revoir les marges/espacements, la hierarchie visuelle (tailles de
+     police entre titres/sous-titres/texte), le contraste texte/fond
+     (attention en particulier sur la sidebar verte actuelle et le fond
+     de l'apercu PDF - a verifier avec un controle de contraste simple).
+   - Page de connexion : premiere impression de l'app, a soigner en
+     priorite.
+
+================================================================
+4. DEROULE PROPOSE (indicatif, a ajuster)
+================================================================
+
+Dimanche 23 / lundi 24 aout : nom + logo + palette de couleurs (point A
+et B) - c'est la base dont tout le reste depend, a valider avant
+d'avancer sur le detail.
+
+Mardi 25 - mercredi 26 aout : integration de la palette et de la
+typographie dans app_v2.py (points B, C), page par page.
+
+Jeudi 27 aout : remplacement des emojis / iconographie (point D),
+finitions generales (point E).
+
+Vendredi 28 aout : mise a jour du PDF (logo/nom en pied de page),
+retest complet du parcours, ajustements finaux.
+
+Marge samedi 29 - dimanche 30 aout : reserve en cas de retard, avant la
+deadline du 31 aout.
+
+================================================================
+5. LIVRABLE DE FIN DE TACHE
+================================================================
+
+- app_v2.py restyle, avec nom et logo integres partout.
+- Fichier logo verse dans le depot (emplacement propose : app/assets/
+  ou docs/, a definir).
+- app/README.md mis a jour (nom de l'app + correction du mismatch
+  streamlit run app.py / app_v2.py, deja signale precedemment).
+- Parcours complet reteste (connexion -> nouvelle demande -> resultats
+  -> export PDF) sans regression.
