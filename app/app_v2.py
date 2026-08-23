@@ -1427,6 +1427,7 @@ def page_export_pdf():
         with c2:
             st.write(f"Montant accordé : {format_fcfa(montant_accorde)}")
             st.write(f"Taux : {taux_indicatif} %")
+            
         st.divider()
         
         st.markdown("**✅ ANALYSE DU RISQUE**")
