@@ -294,6 +294,7 @@ def save_demande(data: Dict, user_id: str) -> Optional[str]:
     return None
 
 
+@st.cache_data(ttl=10, show_spinner=False)
 def get_demandes(user_id: str, statut: str = None, limit: int = 50) -> List[Dict]:
     """
     Récupère les demandes d'un agent.
@@ -314,8 +315,9 @@ def get_demandes(user_id: str, statut: str = None, limit: int = 50) -> List[Dict
         params.append(statut)
     
     query = f"""
-        SELECT id, id_demande, nom_demandeur, prenom_demandeur, montant_demande,
-               montant_accorde, score_ml, categorie_risque, decision, statut,
+         SELECT id, id_demande, nom_demandeur, prenom_demandeur, age_tranche,
+             secteur_activite, montant_demande, montant_accorde, score_ml,
+             categorie_risque, decision, statut,
                date_creation, date_analyse
         FROM public.demandes_credit
         {where_clause}

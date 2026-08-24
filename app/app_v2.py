@@ -409,6 +409,7 @@ def init_session_state():
     defaults = {
         "page": "connexion",
         "authenticated": False,
+        "registration_message": None,
         "user": None,
         "agent_nom": None,
         "institution": "Microfinance",
@@ -806,7 +807,7 @@ def get_historique_demandes():
     """Récupère l'historique Supabase dans le format utilisé par l'interface."""
     user = st.session_state.get("user")
     if user:
-        demandes = db_get_demandes(user["id"])
+        demandes = get_demandes(user["id"])
         if demandes:
             df = pd.DataFrame(demandes)
             df["id"] = df["id_demande"]
@@ -832,6 +833,13 @@ def get_historique_demandes():
     df = pd.DataFrame(data)
     df["date"] = pd.to_datetime(df["date"])
     df["date_creation"] = df["date"]
+    df["categorie_risque"] = df["profil"]
+    df["nom"] = ""
+    df["prenom"] = ""
+    df["id_demande"] = df["id"]
+    df["nom_demandeur"] = df["nom"]
+    df["montant_demande"] = df["montant"]
+    df["score_ml"] = df["score"]
     return df
 
 
@@ -958,7 +966,7 @@ def render_sidebar():
         st.divider()
         if st.button("Déconnexion", width="stretch", key="nav_deconnexion"):
             if st.session_state.get("user"):
-                db_logout_user(st.session_state.user["id"], st.session_state.user.get("session_id", ""))
+                logout_user(st.session_state.user["id"], st.session_state.user.get("session_id", ""))
             st.session_state.authenticated = False
             st.session_state.user = None
             go_to("connexion")
@@ -1067,6 +1075,13 @@ def page_connexion():
                 else:
                     st.error("Veuillez renseigner identifiant et mot de passe")
 
+            if st.session_state.registration_message:
+                st.success(st.session_state.registration_message)
+                st.session_state.registration_message = None
+
+            if st.button("Créer un compte", width="stretch"):
+                go_to("register")
+
             st.markdown(
                 "<p style='text-align:center; color:#64748b; font-size:0.9em;'>"
                 "Mot de passe oublié? · Aide</p>",
@@ -1078,6 +1093,83 @@ def page_connexion():
             "Connexion sécurisée</p>",
             unsafe_allow_html=True,
         )
+
+
+# =====================================================================
+# 6.1 PAGE — INSCRIPTION
+# =====================================================================
+def page_register():
+    """Crée un compte utilisateur avec register_user()."""
+    st.markdown(
+        """
+        <style>
+        .stApp { background: linear-gradient(160deg, #0f2b21 0%, #14243f 100%); }
+        [data-testid="collapsedControl"] { display: none; }
+        section[data-testid="stSidebar"] { display: none; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    _, col_centre, _ = st.columns([1, 1.8, 1])
+    with col_centre:
+        st.markdown(
+            "<h2 style='text-align:center; color:white;'>Créer un compte</h2>",
+            unsafe_allow_html=True,
+        )
+        with st.container(border=True):
+            nom_complet = st.text_input("Nom complet *", placeholder="Ex : KOM Olivier")
+            email = st.text_input("Email professionnel *", placeholder="exemple@imf.cm")
+            col_institution, col_role = st.columns(2)
+            with col_institution:
+                institution = st.text_input("Institution *", value="Microfinance XYZ")
+            with col_role:
+                role = st.selectbox(
+                    "Rôle de l'utilisateur *",
+                    options=["agent", "manager", "admin"],
+                    format_func=lambda valeur: {
+                        "agent": "Agent",
+                        "manager": "Manager",
+                        "admin": "Administrateur",
+                    }[valeur],
+                )
+            col_password, col_confirmation = st.columns(2)
+            with col_password:
+                mot_de_passe = st.text_input("Mot de passe *", type="password")
+            with col_confirmation:
+                confirmation = st.text_input("Confirmer le mot de passe *", type="password")
+
+            if st.button("Créer le compte", width="stretch", type="primary"):
+                email = email.strip().lower()
+                nom_complet = nom_complet.strip()
+                institution = institution.strip()
+
+                if not nom_complet or not email or not institution or not mot_de_passe:
+                    st.error("Veuillez renseigner tous les champs obligatoires.")
+                elif "@" not in email:
+                    st.error("Veuillez saisir une adresse email valide.")
+                elif mot_de_passe != confirmation:
+                    st.error("Les mots de passe ne correspondent pas.")
+                elif len(mot_de_passe) < 8:
+                    st.error("Le mot de passe doit contenir au moins 8 caractères.")
+                else:
+                    succes, message = register_user(
+                        email, mot_de_passe, nom_complet, institution, role
+                    )
+                    if succes:
+                        st.session_state.registration_message = message
+                        go_to("connexion")
+                    else:
+                        st.error(message)
+
+            if st.button("Retour à la connexion", width="stretch"):
+                go_to("connexion")
+
+    st.markdown(
+        "<p style='text-align:center; color:#c9d3e3; font-size:0.85em; margin-top:14px;'>"
+        "Connexion sécurisée</p>",
+        unsafe_allow_html=True,
+    )
 
 
 # =====================================================================
@@ -1139,7 +1231,7 @@ def page_tableau_de_bord():
                     if not df.empty:
                         recentes = df.head(5)
                         st.dataframe(
-                            recentes[["id_demande", "nom_demandeur", "montant_demande", "decision", "score_ml"]],
+                            recentes[["id", "nom", "montant", "decision", "score"]],
                             use_container_width=True, hide_index=True,
 
                         )
@@ -1452,9 +1544,9 @@ def page_nouvelle_demande():
             })
 
             user = st.session_state.get("user")
-            demande_id = db_save_demande(demande_data, user["id"]) if user else None
+            demande_id = save_demande(demande_data, user["id"]) if user else None
             if demande_id:
-                db_get_demandes.clear()
+                get_demandes.clear()
                 demande_data["id"] = demande_id
                 st.session_state.demande_data = demande_data
                 st.session_state.demande_id_counter += 1
@@ -1747,31 +1839,40 @@ def page_historique():
     
     c1, c2, c3 = st.columns([2, 2, 1.3])
     with c1:
-        statuts = st.multiselect("Filtrer par catégorie", options=sorted(df["categorie_risque"].unique().tolist()),
-                                  default=sorted(df["categorie_risque"].unique().tolist()))
+        statuts = sorted(df["statut"].dropna().unique().tolist())
+        statuts_selectionnes = st.multiselect(
+            "Filtrer par statut", options=statuts, default=statuts
+        )
     with c2:
         score_min, score_max = st.slider("Plage de score", 0, 100, (0, 100))
     with c3:
         recherche = st.text_input("Rechercher un ID", "")
     
-    df_filtre = df[df["statut"].isin(statuts)]
+    df_filtre = df[df["statut"].isin(statuts_selectionnes)]
     df_filtre = df_filtre[(df_filtre["score"] >= score_min) & (df_filtre["score"] <= score_max)]
     if recherche:
         df_filtre = df_filtre[df_filtre["id"].str.contains(recherche, case=False)]
     df_filtre = df_filtre.sort_values("date", ascending=False)
     
     st.caption(f"{len(df_filtre)} demande(s) trouvée(s) sur {len(df)}")
+    historique_visible = df_filtre[
+        ["id", "date", "profil", "age", "montant", "decision", "score"]
+    ].rename(columns={
+        "id": "ID demande",
+        "date": "Date",
+        "profil": "Profil",
+        "age": "Tranche d'âge",
+        "montant": "Montant demandé",
+        "decision": "Décision",
+        "score": "Score",
+    })
     
     st.dataframe(
-        df_filtre,
+        historique_visible,
         column_config={
-            "id": "ID Demande",
-            "date": st.column_config.DateColumn("Date", format="DD/MM/YYYY"),
-            "profil": "Profil",
-            "age": "Tranche d'âge",
-            "montant": st.column_config.NumberColumn("Montant demandé", format="%d FCFA"),
-            "statut": "Statut",
-            "score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d/100"),
+            "Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY"),
+            "Montant demandé": st.column_config.NumberColumn("Montant demandé", format="%d FCFA"),
+            "Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d/100"),
         },
         use_container_width=True,
         hide_index=True,
@@ -1789,11 +1890,16 @@ def page_parametres():
     st.title("Paramètres")
     
     st.subheader("Profil de l'agent")
+    utilisateur = st.session_state.get("user") or {}
+    agent_db = get_agent_info(utilisateur["id"]) if utilisateur.get("id") else None
+    profil_db = agent_db or utilisateur
+    nom_agent_db = profil_db.get("nom_complet", "")
+    institution_db = profil_db.get("institution", "Microfinance")
     c1, c2 = st.columns(2)
     with c1:
-        nouveau_nom = st.text_input("Nom de l'agent", value=st.session_state.agent_nom)
+        nouveau_nom = st.text_input("Nom de l'agent", value=nom_agent_db)
     with c2:
-        nouvelle_institution = st.text_input("Institution", value=st.session_state.institution)
+        nouvelle_institution = st.text_input("Institution", value=institution_db)
     if st.button("Enregistrer"):
         st.session_state.agent_nom = nouveau_nom
         st.session_state.institution = nouvelle_institution
@@ -1839,10 +1945,12 @@ def page_parametres():
 def main():
     """Point d'entrée principal."""
     if not st.session_state.authenticated and st.session_state.page != "connexion":
-        st.session_state.page = "connexion"
+        if st.session_state.page != "register":
+            st.session_state.page = "connexion"
     
     routes = {
         "connexion": page_connexion,
+        "register": page_register,
         "tableau_de_bord": page_tableau_de_bord,
         "nouvelle_demande": page_nouvelle_demande,
         "resultats": page_resultats,
