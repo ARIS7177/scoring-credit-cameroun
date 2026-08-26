@@ -6,7 +6,6 @@
 """
 
 import streamlit as st
-from streamlit.errors import StreamlitSecretNotFoundError
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
@@ -14,6 +13,7 @@ import numpy as np
 import joblib
 import os
 import sys
+import uuid
 
 # Ajouter la racine du projet au chemin Python
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -21,11 +21,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import shap_view  # Module SHAP d'Andy (à la racine)
 from catboost import Pool
 
-import psycopg2
-from psycopg2.extras import RealDictCursor
-import bcrypt
-import uuid
-from functools import wraps
 
 # fpdf2 optionnel pour export PDF
 try:
@@ -36,10 +31,12 @@ except ImportError:
     FPDF_DISPONIBLE = False
 
 from db_manager import (
-    login_user, register_user, logout_user,
-    save_demande, get_demandes, update_demande_status,
-    get_agent_info, get_stats_institution,
-    log_action, health_check
+    login_user,
+    register_user,
+    logout_user,
+    save_demande,
+    get_demandes,
+    get_agent_info,
 )
 
 # =====================================================================
@@ -69,184 +66,10 @@ FEATURES_NAMES = MODEL_DATA['features'] if MODEL_DATA else []
 
 
 # =====================================================================
-# 0.5 GESTION SUPABASE (INTÉGRÉE)
+# 0.5 ACCÈS BASE DE DONNÉES
 # =====================================================================
-def get_db_connection():
-    """Établit une nouvelle connexion PostgreSQL à Supabase."""
-    try:
-        supabase_config = st.secrets.get("supabase", {})
-        supabase_url = supabase_config.get("url")
-        if not supabase_url:
-            return None
-        
-        project_id = supabase_url.split("//")[1].split(".")[0]
-        db_host = (
-            supabase_config.get("pooler_host")
-        )
-        db_user = supabase_config.get("db_user") or "postgres"
-        db_port = int(supabase_config.get("db_port", 5432))
-        db_name = supabase_config.get("db_name") or "postgres"
-        db_password = supabase_config.get("db_password")
-        
-        conn = psycopg2.connect(
-            host=db_host, port=db_port, database=db_name,
-            user=db_user, password=db_password,
-            connect_timeout=5, sslmode="require"
-        )
-        return conn
-    except (FileNotFoundError, StreamlitSecretNotFoundError):
-        st.warning(
-            "Configuration Supabase absente. Lancez l'application depuis le dossier "
-            "app ou configurez .streamlit/secrets.toml."
-        )
-        return None
-    except Exception as e:
-        message = str(e)
-        if "could not translate host name" in message or "Name or service not known" in message:
-            message += (
-                " Vérifiez db_host, ou configurez pooler_host avec l'hôte "
-                "Session pooler indiqué dans Supabase > Connect."
-            )
-        st.error(f"❌ Erreur DB : {message}")
-        return None
- 
-def execute_db_query(query: str, params: tuple = None, fetch: bool = False):
-    """Exécute une requête SQL."""
-    conn = get_db_connection()
-    if not conn:
-        return None
-    
-    try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(query, params)
-            if fetch:
-                result = cursor.fetchall()
-            else:
-                result = None
-            conn.commit()
-        return result
-    except Exception as e:
-        st.error(f"❌ Erreur requête : {e}")
-        if not conn.closed:
-            conn.rollback()
-        return None
-    finally:
-        if not conn.closed:
-            conn.close()
- 
-def db_login_user(identifiant: str, password: str):
-    """Authentifie un utilisateur par email ou nom complet."""
-    query = """
-        SELECT id, email, password_hash, nom_complet, institution, role, actif
-        FROM public.users
-        WHERE (LOWER(email) = LOWER(%s) OR LOWER(nom_complet) = LOWER(%s))
-          AND actif = TRUE
-        LIMIT 1
-    """
-    identifiant = identifiant.strip()
-    result = execute_db_query(query, (identifiant, identifiant), fetch=True)
-    if not result:
-        return None
-    
-    user = dict(result[0])
-    password_hash = user.pop("password_hash", "")
-    try:
-        password_valide = bcrypt.checkpw(password.encode(), password_hash.encode())
-    except (ValueError, TypeError):
-        password_valide = False
-    if not password_valide:
-        return None
-    
-    # Mettre à jour last_login
-    update_query = """
-        UPDATE public.users 
-        SET date_derniere_connexion = CURRENT_TIMESTAMP,
-            nb_connexions_total = nb_connexions_total + 1
-        WHERE id = %s
-    """
-    execute_db_query(update_query, (user["id"],))
-    
-    # Créer session
-    session_id = str(uuid.uuid4())
-    session_query = """
-        INSERT INTO public.sessions (user_id, token_session, date_connexion, actif)
-        VALUES (%s, %s, CURRENT_TIMESTAMP, TRUE)
-    """
-    execute_db_query(session_query, (user["id"], session_id))
-    
-    user["session_id"] = session_id
-    return user
- 
-def db_save_demande(data: dict, user_id: str):
-    """Enregistre une demande dans Supabase."""
-    id_demande = f"#{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:8].upper()}"
-    
-    columns = [
-        'id_demande', 'user_id', 'nom_demandeur', 'prenom_demandeur',
-        'genre', 'age_tranche', 'education', 'adresse_demandeur',
-        'revenu_mensuel', 'charges_mensuelles', 'montant_demande',
-        'duree_mois', 'objet_pret', 'secteur_activite', 'anciennete_activite',
-        'score_ml', 'categorie_risque', 'proba_defaut', 'decision', 'source_score',
-        'activite_saisonniere', 'mobile_money', 'ligne_credit_ouverte', 'usage_credit',
-        'garant', 'logement_situation', 'statut', 'date_creation', 'date_analyse'
-    ]
-    
-    placeholders = ', '.join(['%s'] * len(columns))
-    columns_str = ', '.join(columns)
-    
-    query = f"""
-        INSERT INTO public.demandes_credit ({columns_str})
-        VALUES ({placeholders})
-        RETURNING id_demande
-    """
-    
-    values = [
-        id_demande, user_id,
-        data.get('nom'), data.get('prenom'),
-        data.get('genre'), data.get('age'), data.get('education'), data.get('adresse'),
-        float(data.get('revenu', 0)), float(data.get('charges', 0)), float(data.get('montant_demande', 0)),
-        int(data.get('duree', 0)), data.get('objet'), data.get('secteur'), int(data.get('anciennete', 0)),
-        int(data.get('score_ml', 0)) if data.get('score_ml') else None,
-        data.get('categorie_risque'), float(data.get('proba_defaut', 0)) if data.get('proba_defaut') else None,
-        data.get('decision'), data.get('source_score', 'HEURISTIQUE'),
-        data.get('activite_saisonniere') == 'Oui',
-        data.get('mobile_money') == 'Oui',
-        data.get('ligne_credit') == 'Oui',
-        data.get('usage_credit'),
-        data.get('garant'), data.get('logement'),
-        'analysee' if data.get('score_ml') else 'saisie',
-        datetime.now(),
-        datetime.now() if data.get('score_ml') else None
-    ]
-    
-    result = execute_db_query(query, tuple(values), fetch=True)
-    return dict(result[0])['id_demande'] if result else None
- 
-@st.cache_data(ttl=10, show_spinner=False)
-def db_get_demandes(user_id: str, limit: int = 50):
-    """Récupère les demandes d'un agent depuis Supabase."""
-    query = """
-         SELECT id, id_demande, nom_demandeur, prenom_demandeur, age_tranche,
-             secteur_activite, montant_demande, montant_accorde, score_ml,
-             categorie_risque, decision, statut,
-               date_creation, date_analyse
-        FROM public.demandes_credit
-        WHERE user_id = %s
-        ORDER BY date_creation DESC
-        LIMIT %s
-    """
-    result = execute_db_query(query, (user_id, limit), fetch=True)
-    return result if result else []
- 
-def db_logout_user(user_id: str, session_id: str):
-    """Ferme la session utilisateur."""
-    update_query = """
-        UPDATE public.sessions 
-        SET date_deconnexion = CURRENT_TIMESTAMP, actif = FALSE
-        WHERE user_id = %s AND token_session = %s
-    """
-    execute_db_query(update_query, (user_id, session_id))
- 
+# La persistance est centralisée dans db_manager.py.
+
 
 # =====================================================================
 # 1. CONFIGURATION GÉNÉRALE DE LA PAGE
@@ -363,39 +186,36 @@ SECTEUR_MAPPING = {
 # Profils d'exemple
 EXEMPLES = {
     "favorable": {
-        "nom": "MBARGA", "prenom": "Jean", "adresse": "Quartier Bastos, Yaoundé",
+        "nom": "MANDENG", "prenom": "Francois", "adresse": "Bépanda, Douala",
         "genre": "Masculin", "age": "35-44", "education": "Supérieur",
-        "revenu": 250000, "charges": 80000, "ligne_credit": "Non", "usage_credit": "Professionnel",
+        "revenu": 250000, "charges": 150000, "ligne_credit": "Non", "usage_credit": "Professionnel",
         "personnes_charge": 3, "logement": "Propriétaire", "anciennete": 36,
         "montant_demande": 2000000, "duree": 24, "objet": "Investissement (activité)",
         "secteur": "Salarié formel", "activite_saisonniere": "Non",
-        "mobile_money": "Oui",
-        "garant": "Oui (logement en hypothèque)",
+        "mobile_money": "Oui", "membre_tontine": "Oui", "garant": "Oui (logement en hypothèque)",
     },
     "moyen": {
-        "nom": "NGONO", "prenom": "Marie", "adresse": "Quartier Akwa, Douala",
+        "nom": "NGONO", "prenom": "Manie", "adresse": "Akwa, Douala",
         "genre": "Féminin", "age": "25-34", "education": "Secondaire",
-        "revenu": 150000, "charges": 50000, "ligne_credit": "Oui", "usage_credit": "Personnel",
-        "personnes_charge": 2, "logement": "Locataire", "anciennete": 26,
+        "revenu": 150000, "charges": 800000, "ligne_credit": "Oui", "usage_credit": "Personnel",
+        "personnes_charge": 2, "logement": "Locataire", "anciennete": 25,
         "montant_demande": 800000, "duree": 18, "objet": "Trésorerie",
-        "secteur": "Commerçant indépendant", "activite_saisonniere": "Non",
-        "mobile_money": "Oui",
-        "garant": "Non",
+        "secteur": "Commercant Indépendant", "activite_saisonniere": "Non",
+        "mobile_money": "Oui", "membre_tontine": "Non", "garant": "Non",
     },
     "risque": {
-        "nom": "ABDOULAYE", "prenom": "Oumar", "adresse": "Quartier Domayo, Maroua",
-        "genre": "Masculin", "age": "55-64", "education": "Primaire",
-        "revenu": 65000, "charges": 35000, "ligne_credit": "Oui", "usage_credit": "Personnel",
-        "personnes_charge": 5, "logement": "Hébergé", "anciennete": 8,
+        "nom": "MABO", "prenom": "Oumar", "adresse": "Newbell, Maroua",
+        "genre": "Masculin", "age": "55-64", "education": "Supérieure",
+        "revenu": 65000, "charges": 55000, "ligne_credit": "Oui", "usage_credit": "Personnel",
+        "personnes_charge": 5, "logement": "Locataire", "anciennete": 8,
         "montant_demande": 600000, "duree": 12, "objet": "Autre",
         "secteur": "Activité saisonnière", "activite_saisonniere": "Oui",
-        "mobile_money": "Non",
-        "garant": "Non",
+        "mobile_money": "Oui", "membre_tontine": "Non", "garant": "Non",
     },
 }
 
 VALEURS_PAR_DEFAUT_FORMULAIRE = {
-    "revenu": 250000, "charges": 80000, "personnes_charge": 3, "anciennete": 36,
+    "revenu": 250000, "charges": 150000, "personnes_charge": 3, "anciennete": 36,
     "montant_demande": 2000000, "duree": 24, "objet": OPTIONS_OBJET[0],
     "activite_saisonniere": "Non", "mobile_money": "Oui",
 }
@@ -807,7 +627,11 @@ def get_historique_demandes():
     """Récupère l'historique Supabase dans le format utilisé par l'interface."""
     user = st.session_state.get("user")
     if user:
-        demandes = get_demandes(user["id"])
+        demandes = get_demandes(
+            user_id=user["id"],
+            role=user.get("role", "agent"),
+            institution=user.get("institution")
+        )
         if demandes:
             df = pd.DataFrame(demandes)
             df["id"] = df["id_demande"]
@@ -843,7 +667,7 @@ def get_historique_demandes():
     return df
 
 
-def generer_pdf(data, resultat, montant_accorde, taux, mensualite, score_model=None):
+def generer_pdf(data, resultat, montant_disponible, taux, mensualite, score_model=None):
     """Génère le rapport PDF."""
     if not FPDF_DISPONIBLE:
         return None
@@ -885,7 +709,7 @@ def generer_pdf(data, resultat, montant_accorde, taux, mensualite, score_model=N
     
     titre_section("INFORMATIONS DE LA DEMANDE")
     deux_colonnes("ID demande", data["id"], "Date d'analyse", datetime.now().strftime("%d/%m/%Y %Hh%M"))
-    deux_colonnes("Agent", st.session_state.agent_nom, "Institution", st.session_state.institution)
+    deux_colonnes("Agent", st.session_state.user.get('nom_complet', 'Inconnu'), "Institution", st.session_state.institution)
     deux_colonnes("Score", f"{score_model}/100" if score_model else "N/A", "Risque estimé", resultat["categorie"])
     pdf.ln(3)
     
@@ -896,11 +720,28 @@ def generer_pdf(data, resultat, montant_accorde, taux, mensualite, score_model=N
     pdf.ln(3)
     
     titre_section("DEMANDE DE CREDIT")
-    deux_colonnes("Montant demandé", format_fcfa(data["montant_demande"]), "Montant accordé", format_fcfa(montant_accorde))
-    deux_colonnes("Objet du prêt", f"{data['objet']} mois", "Durée", f"{data['duree']} mois")
+    # Afficher le montant disponible UNIQUEMENT pour ÉTUDE APPROFONDIE et REFUSÉ
+    if resultat["decision"] in ("ÉTUDE APPROFONDIE", "REFUSÉ"):
+        deux_colonnes(
+            "Montant demandé",
+            format_fcfa(data["montant_demande"]),
+            "Montant disponible",
+            format_fcfa(montant_disponible)
+        )
+    else:
+        # Pour ACCORDÉ, afficher uniquement le montant demandé
+        pdf.cell(90, 6, texte(f"Montant demandé : {format_fcfa(data['montant_demande'])}"))
+        pdf.ln(6)
+    
+    deux_colonnes(
+        "Objet du prêt",
+        data["objet"],
+        "Durée",
+        f"{data['duree']} mois"
+    )    
     pdf.ln(3)
     
-    titre_section("ANALYSE DU RISQUE (MODELE ML)")
+    titre_section("ANALYSE DU RISQUE")
     pdf.set_font("Helvetica", "B", 13)
     pdf.cell(0, 8, texte(f"Score ML : {score_model}/100  |  Risque : {resultat['categorie']}  |  {resultat['decision']}"),
              new_x=XPos.LMARGIN, new_y=YPos.NEXT)
@@ -966,7 +807,10 @@ def render_sidebar():
         st.divider()
         if st.button("Déconnexion", width="stretch", key="nav_deconnexion"):
             if st.session_state.get("user"):
-                logout_user(st.session_state.user["id"], st.session_state.user.get("session_id", ""))
+                logout_user(
+                    st.session_state.user["id"],
+                    st.session_state.user.get("session_id", "")
+                )
             st.session_state.authenticated = False
             st.session_state.user = None
             go_to("connexion")
@@ -1120,19 +964,7 @@ def page_register():
         with st.container(border=True):
             nom_complet = st.text_input("Nom complet *", placeholder="Ex : KOM Olivier")
             email = st.text_input("Email professionnel *", placeholder="exemple@imf.cm")
-            col_institution, col_role = st.columns(2)
-            with col_institution:
-                institution = st.text_input("Institution *", value="Microfinance XYZ")
-            with col_role:
-                role = st.selectbox(
-                    "Rôle de l'utilisateur *",
-                    options=["agent", "manager", "admin"],
-                    format_func=lambda valeur: {
-                        "agent": "Agent",
-                        "manager": "Manager",
-                        "admin": "Administrateur",
-                    }[valeur],
-                )
+            institution = st.text_input("Institution *", value="Microfinance XYZ")
             col_password, col_confirmation = st.columns(2)
             with col_password:
                 mot_de_passe = st.text_input("Mot de passe *", type="password")
@@ -1154,7 +986,7 @@ def page_register():
                     st.error("Le mot de passe doit contenir au moins 8 caractères.")
                 else:
                     succes, message = register_user(
-                        email, mot_de_passe, nom_complet, institution, role
+                        email, mot_de_passe, nom_complet, institution, "agent"
                     )
                     if succes:
                         st.session_state.registration_message = message
@@ -1240,11 +1072,11 @@ def page_tableau_de_bord():
                     go_to("historique")
             
             st.write("**Demandes récentes**")
-            recentes = df.sort_values("date", ascending=False).head(3)[["id", "profil", "age", "statut", "score"]]
+            recentes = df.sort_values("date", ascending=False).head(3)[["id", "profil", "age", "decision", "score"]]
             st.dataframe(
                 recentes,
                 column_config={
-                    "id": "ID", "profil": "Profil", "age": "Âge", "statut": "Statut",
+                    "id": "ID", "profil": "Profil", "age": "Âge", "decision": "Statut",
                     "score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d/100"),
                 },
                 hide_index=True, use_container_width=True,
@@ -1270,7 +1102,7 @@ def page_nouvelle_demande():
     render_entete()
     
     st.title("Nouvelle demande de prêt")
-    nouvel_id = f"#{datetime.now().strftime('%Y%m%d')}-{st.session_state.demande_id_counter:04d}"
+    nouvel_id = f"#{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:8].upper()}"
     st.caption(f"ID demande : {nouvel_id} · Statut : Saisie en cours · Mode : ML Prédictif")
     
     init_formulaire_defaults()
@@ -1623,20 +1455,36 @@ def page_resultats():
         with st.container(border=True):
             if resultat["decision"] == "ACCORDÉ":
                 st.success(f"DÉCISION : {resultat['decision']}")
-                montant_accorde = montant_recommande
+                montant_disponible = montant_recommande
+
             elif resultat["decision"] == "ÉTUDE APPROFONDIE":
                 st.warning(f"DÉCISION : {resultat['decision']}")
-                montant_accorde = round(montant_recommande * 0.50 / 1000) * 1000
+                montant_disponible = round(montant_recommande * 0.50 / 1000) * 1000
             else:
                 st.error(f"DÉCISION : {resultat['decision']}")
-                montant_accorde = 0
+                montant_disponible = 0
             
             taux_indicatif = 18.5 if resultat["score"] >= 55 else 22.0
-            mensualite = calculer_mensualite(montant_accorde, taux_indicatif, data["duree"]) if montant_accorde else 0
-            
+
+            # ACCORDÉ      → montant demandé
+            # ÉTUDE        → montant disponible
+            # REFUSÉ       → montant disponible (= 0)
+            if resultat["decision"] == "ACCORDÉ":
+                montant_base_mensualite = data["montant_demande"]
+            else:
+                montant_base_mensualite = montant_disponible
+
+            mensualite = (calculer_mensualite(montant_base_mensualite, taux_indicatif, data["duree"])
+                if montant_base_mensualite > 0
+                else 0
+            )    
+
             cc1, cc2 = st.columns(2)
             with cc1:
-                st.metric("Montant accordé", format_fcfa(montant_accorde))
+                # Afficher le montant disponible UNIQUEMENT pour ÉTUDE APPROFONDIE et REFUSÉ
+                if resultat["decision"] in ("ÉTUDE APPROFONDIE", "REFUSÉ"):
+                    st.metric("Montant disponible", format_fcfa(montant_disponible))
+
                 st.metric("Taux indicatif", f"{taux_indicatif} %")
                 st.metric("Mensualité estimée", format_fcfa(mensualite))
             with cc2:
@@ -1678,14 +1526,6 @@ def page_resultats():
     # ==========================================================
     # INTÉGRATION SHAP PAR ANDY - GRAPHIQUES EXPLICATIFS
     # ==========================================================
-    # Réutilise construire_features_pour_modele() - la même fonction qui a
-    # servi à calculer le score affiché - plutôt que de reconstruire un dict
-    # à la main : shap_view.preparer_donnees_client() ne fait aucun encodage
-    # one-hot, donc lui passer les valeurs brutes de objet_pret/secteur_activite
-    # (ex. "Achat d'équipement") laissait toutes les colonnes objet_pret_*/
-    # secteur_activite_* à 0, pour tous les clients. En partant du vecteur
-    # déjà encodé, les graphiques SHAP portent garantis sur les mêmes valeurs
-    # que le score et les facteurs explicatifs affichés au-dessus.
     features_ml = construire_features_pour_modele(data)
     donnees_client = dict(zip(FEATURES_NAMES, features_ml[0]))
 
@@ -1709,7 +1549,7 @@ def page_resultats():
     with b3:
         if st.button("Exporter en PDF", type="primary", width="stretch"):
             st.session_state.dernier_resultat = resultat
-            st.session_state.montant_accorde = montant_accorde
+            st.session_state.montant_disponible = montant_disponible            
             st.session_state.taux_indicatif = taux_indicatif
             st.session_state.mensualite = mensualite
             go_to("export_pdf")
@@ -1730,7 +1570,7 @@ def page_export_pdf():
         return
     
     resultat = st.session_state.get("dernier_resultat") or evaluer_demande_heuristique(data)
-    montant_accorde = st.session_state.get("montant_accorde", 0)
+    montant_disponible = st.session_state.get("montant_disponible", 0)
     taux_indicatif = st.session_state.get("taux_indicatif", 18.5)
     mensualite = st.session_state.get("mensualite", 0)
     
@@ -1744,7 +1584,14 @@ def page_export_pdf():
     with col2:
         if FPDF_DISPONIBLE:
             score_model = st.session_state.dernier_score_model
-            pdf_bytes = generer_pdf(data, resultat, montant_accorde, taux_indicatif, mensualite, score_model)
+            pdf_bytes = generer_pdf(
+                data,
+                resultat,
+                montant_disponible,
+                taux_indicatif,
+                mensualite,
+                score_model
+            )            
             st.download_button(
                 "Télécharger le PDF", data=pdf_bytes,
                 file_name=f"rapport_{data['id'].strip('#')}.pdf", mime="application/pdf",
@@ -1781,7 +1628,7 @@ def page_export_pdf():
         c1, c2 = st.columns(2)
         with c1:
             st.write(f"ID : {data['id']}")
-            st.write(f"Agent : {st.session_state.agent_nom}")
+            st.write(f"Agent : {st.session_state.user.get('nom_complet', 'Inconnu')}")
         with c2:
             st.write(f"Date : {datetime.now().strftime('%d %B %Y, %Hh%M')}")
             st.write(f"Score ML : {resultat['score']} / 100")
@@ -1801,8 +1648,10 @@ def page_export_pdf():
             st.write(f"Montant demandé : {format_fcfa(data['montant_demande'])}")
             st.write(f"Durée : {data['duree']} mois")
         with c2:
-            st.write(f"Montant accordé : {format_fcfa(montant_accorde)}")
-            st.write(f"Taux : {taux_indicatif} %")
+            # Afficher le montant disponible UNIQUEMENT pour ÉTUDE APPROFONDIE et REFUSÉ
+            if resultat["decision"] in ("ÉTUDE APPROFONDIE", "REFUSÉ"):
+                st.write(f"Montant disponible : {format_fcfa(montant_disponible)}")
+            st.write(f"Taux indicatif : {taux_indicatif} %")
 
         st.divider()
         
@@ -1839,16 +1688,16 @@ def page_historique():
     
     c1, c2, c3 = st.columns([2, 2, 1.3])
     with c1:
-        statuts = sorted(df["statut"].dropna().unique().tolist())
-        statuts_selectionnes = st.multiselect(
-            "Filtrer par statut", options=statuts, default=statuts
+        decisions = sorted(df["decision"].dropna().unique().tolist())
+        decisions_selectionnes = st.multiselect(
+            "Filtrer par statut", options=decisions , default=decisions
         )
     with c2:
         score_min, score_max = st.slider("Plage de score", 0, 100, (0, 100))
     with c3:
         recherche = st.text_input("Rechercher un ID", "")
     
-    df_filtre = df[df["statut"].isin(statuts_selectionnes)]
+    df_filtre = df[df["decision"].isin(decisions_selectionnes)]
     df_filtre = df_filtre[(df_filtre["score"] >= score_min) & (df_filtre["score"] <= score_max)]
     if recherche:
         df_filtre = df_filtre[df_filtre["id"].str.contains(recherche, case=False)]

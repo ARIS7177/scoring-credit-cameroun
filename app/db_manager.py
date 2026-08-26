@@ -7,10 +7,9 @@ Gère toute interaction avec Supabase (PostgreSQL hébergé).
 
 Fonctions principales :
   • Authentication : login_user(), register_user(), logout_user()
-  • Demandes : save_demande(), get_demandes(), update_demande_status()
+  • Demandes : save_demande(), get_demandes(), get_demande_detail()
   • Agents : get_agent_info(), update_agent_stats()
-  • Historique : log_action()
-=====================================================================
+  • Utilitaires : get_user_full_info()
 """
 
 import streamlit as st
@@ -119,57 +118,61 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-def login_user(email: str, password: str) -> Optional[Dict]:
+def login_user(identifiant: str, password: str) -> Optional[Dict]:
     """
-    Authentifie un utilisateur contre la base Supabase.
-    
-    Returns:
-        Dict avec infos user si succès, None sinon
+    Authentifie un utilisateur par email ou nom complet.
+
+    Le mot de passe est vérifié avec bcrypt et une session applicative
+    est créée en cas de succès.
     """
+    identifiant = (identifiant or "").strip()
+    if not identifiant or not password:
+        return None
+
     query = """
-        SELECT id, email, nom_complet, institution, role, actif, 
-               date_derniere_connexion, nb_connexions_total
-        FROM public.users
-        WHERE email = %s AND actif = TRUE
+        SELECT
+            u.id,
+            u.email,
+            u.password_hash,
+            u.nom_complet,
+            u.institution,
+            u.role,
+            u.actif,
+            u.date_derniere_connexion,
+            u.nb_connexions_total
+        FROM public.users AS u
+        WHERE (LOWER(u.email) = LOWER(%s)
+               OR LOWER(u.nom_complet) = LOWER(%s))
+          AND u.actif = TRUE
         LIMIT 1
     """
-    
-    result = execute_query(query, (email,), fetch=True)
-    if not result or len(result) == 0:
+
+    result = execute_query(query, (identifiant, identifiant), fetch=True)
+    if not result:
         return None
-    
+
     user = dict(result[0])
-    
-    # Récupérer le hash du password (besoin d'une requête séparée pour la sécurité)
-    hash_query = "SELECT password_hash FROM public.users WHERE email = %s"
-    hash_result = execute_query(hash_query, (email,), fetch=True)
-    
-    if not hash_result:
-        return None
-    
-    password_hash = dict(hash_result[0])["password_hash"]
-    
-    # Vérifier le mot de passe
+    password_hash = user.pop("password_hash", "") or ""
+
     if not verify_password(password, password_hash):
         return None
-    
-    # Mettre à jour last_login
+
     update_query = """
-        UPDATE public.users 
+        UPDATE public.users
         SET date_derniere_connexion = CURRENT_TIMESTAMP,
-            nb_connexions_total = nb_connexions_total + 1
-        WHERE email = %s
+            nb_connexions_total = COALESCE(nb_connexions_total, 0) + 1
+        WHERE id = %s
     """
-    execute_query(update_query, (email,))
-    
-    # Créer une session
+    execute_query(update_query, (user["id"],))
+
     session_id = str(uuid.uuid4())
     session_query = """
-        INSERT INTO public.sessions (user_id, token_session, date_connexion, actif)
+        INSERT INTO public.sessions
+            (user_id, token_session, date_connexion, actif)
         VALUES (%s, %s, CURRENT_TIMESTAMP, TRUE)
     """
     execute_query(session_query, (user["id"], session_id))
-    
+
     user["session_id"] = session_id
     return user
 
@@ -295,61 +298,68 @@ def save_demande(data: Dict, user_id: str) -> Optional[str]:
 
 
 @st.cache_data(ttl=10, show_spinner=False)
-def get_demandes(user_id: str, statut: str = None, limit: int = 50) -> List[Dict]:
-    """
-    Récupère les demandes d'un agent.
-    
-    Args:
-        user_id: ID de l'agent
-        statut: Filtrer par statut (optionnel)
-        limit: Nombre maximal de résultats
-    
-    Returns:
-        Liste de demandes
-    """
-    where_clause = "WHERE user_id = %s"
-    params = [user_id]
-    
+def get_demandes(
+    user_id: Optional[str] = None,
+    statut: str = None,
+    limit: int = 50,
+    role: str = "agent",
+    institution: str = None,
+) -> List[Dict]:
+    """Récupère les demandes selon le rôle de l'utilisateur."""
+    conditions = []
+    params = []
+
+    try:
+        limit = max(1, min(int(limit), 500))
+    except (TypeError, ValueError):
+        limit = 50
+
+    role = (role or "agent").lower()
+
+    if role == "manager" and institution:
+        conditions.append("u.institution = %s")
+        params.append(institution)
+    elif role != "admin":
+        if not user_id:
+            return []
+        conditions.append("d.user_id = %s")
+        params.append(user_id)
+
     if statut:
-        where_clause += " AND statut = %s"
+        conditions.append("d.statut = %s")
         params.append(statut)
-    
+
+    where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
+
     query = f"""
-         SELECT id, id_demande, nom_demandeur, prenom_demandeur, age_tranche,
-             secteur_activite, montant_demande, montant_accorde, score_ml,
-             categorie_risque, decision, statut,
-               date_creation, date_analyse
-        FROM public.demandes_credit
+        SELECT
+            d.id,
+            d.id_demande,
+            d.user_id,
+            d.nom_demandeur,
+            d.prenom_demandeur,
+            d.age_tranche,
+            d.secteur_activite,
+            d.montant_demande,
+            d.montant_accorde,
+            d.score_ml,
+            d.categorie_risque,
+            d.decision,
+            d.statut,
+            d.date_creation,
+            d.date_analyse
+        FROM public.demandes_credit AS d
+        INNER JOIN public.users AS u
+            ON u.id = d.user_id
         {where_clause}
-        ORDER BY date_creation DESC
+        ORDER BY d.date_creation DESC
         LIMIT %s
     """
-    
+
     params.append(limit)
     return execute_query(query, tuple(params), fetch=True) or []
 
-
-def update_demande_status(demande_id: str, new_status: str, 
-                         user_id: str, notes: str = None) -> bool:
-    """
-    Met à jour le statut d'une demande et enregistre l'historique.
-    """
-    # Mettre à jour la demande
-    update_query = """
-        UPDATE public.demandes_credit
-        SET statut = %s, date_decision = CURRENT_TIMESTAMP, notes_agent = %s
-        WHERE id = %s
-    """
-    
-    result = execute_query(update_query, (new_status, notes, demande_id))
-    
-    if result is not None:
-        # Enregistrer dans l'historique
-        log_action(demande_id, user_id, 'decision', f'Statut changé à {new_status}', notes)
-        return True
-    return False
-
-
+@st.cache_data(ttl=10, show_spinner=False)
 def get_demande_detail(demande_id: str) -> Optional[Dict]:
     """Récupère tous les détails d'une demande."""
     query = "SELECT * FROM public.demandes_credit WHERE id = %s LIMIT 1"
@@ -398,21 +408,7 @@ def update_agent_stats(user_id: str, decision: str):
 # =====================================================================
 # 4. HISTORIQUE ET AUDIT TRAIL
 # =====================================================================
-
-def log_action(demande_id: str, user_id: str, action: str, 
-               notes: str = None, statut_nouveau: str = None):
-    """
-    Enregistre une action dans l'historique (audit trail).
-    """
-    query = """
-        INSERT INTO public.demandes_historique 
-        (demande_id, user_id, action, notes, statut_nouveau, date_action)
-        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-    """
-    
-    execute_query(query, (demande_id, user_id, action, notes, statut_nouveau))
-
-
+@st.cache_data(ttl=10, show_spinner=False)
 def get_demande_historique(demande_id: str) -> List[Dict]:
     """Récupère l'historique complet d'une demande."""
     query = """
@@ -424,96 +420,7 @@ def get_demande_historique(demande_id: str) -> List[Dict]:
 
 
 # =====================================================================
-# 5. STATISTIQUES QUOTIDIENNES
-# =====================================================================
-
-def get_stats_institution(institution: str, date: str = None) -> Optional[Dict]:
-    """
-    Récupère les stats quotidiennes d'une institution.
-    
-    Args:
-        institution: Nom de l'institution
-        date: Date au format YYYY-MM-DD (défaut: aujourd'hui)
-    
-    Returns:
-        Dict avec les stats
-    """
-    if not date:
-        date = datetime.now().strftime('%Y-%m-%d')
-    
-    query = """
-        SELECT * FROM public.stats_quotidiennes
-        WHERE institution = %s AND date_stat = %s
-        LIMIT 1
-    """
-    
-    result = execute_query(query, (institution, date), fetch=True)
-    return dict(result[0]) if result and len(result) > 0 else None
-
-
-def update_stats_quotidiennes(institution: str, user_id: str = None):
-    """
-    Recalcule les stats quotidiennes pour une institution.
-    À appeler après chaque décision de crédit.
-    """
-    today = datetime.now().strftime('%Y-%m-%d')
-    
-    # Récupérer les stats depuis les demandes du jour
-    stats_query = """
-        SELECT
-            COUNT(*) as nb_creees,
-            COUNT(CASE WHEN score_ml IS NOT NULL THEN 1 END) as nb_analysees,
-            COUNT(CASE WHEN decision = 'ACCORDÉ' THEN 1 END) as nb_acceptees,
-            COUNT(CASE WHEN decision = 'REFUSÉ' THEN 1 END) as nb_refusees,
-            COUNT(CASE WHEN decision = 'ÉTUDE APPROFONDIE' THEN 1 END) as nb_etude,
-            COALESCE(SUM(montant_demande), 0) as montant_total_demande,
-            COALESCE(SUM(montant_accorde), 0) as montant_total_accorde,
-            ROUND(AVG(score_ml), 2) as score_moyen
-        FROM public.demandes_credit
-        WHERE institution = %s AND DATE(date_creation) = %s
-    """
-    
-    stats_result = execute_query(stats_query, (institution, today), fetch=True)
-    
-    if stats_result and len(stats_result) > 0:
-        stats = dict(stats_result[0])
-        
-        # Calculer taux acceptation
-        nb_total = stats['nb_analysees']
-        taux_acceptation = (stats['nb_acceptees'] / nb_total * 100) if nb_total > 0 else 0
-        
-        # Upsert les stats
-        upsert_query = """
-            INSERT INTO public.stats_quotidiennes
-            (institution, user_id, date_stat, nb_demandes_creees, nb_demandes_analysees,
-             nb_demandes_acceptees, nb_demandes_refusees, nb_demandes_etude,
-             montant_total_demande, montant_total_accorde, score_moyen, taux_acceptation,
-             date_maj)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-            ON CONFLICT (institution, date_stat, user_id) DO UPDATE SET
-                nb_demandes_creees = EXCLUDED.nb_demandes_creees,
-                nb_demandes_analysees = EXCLUDED.nb_demandes_analysees,
-                nb_demandes_acceptees = EXCLUDED.nb_demandes_acceptees,
-                nb_demandes_refusees = EXCLUDED.nb_demandes_refusees,
-                nb_demandes_etude = EXCLUDED.nb_demandes_etude,
-                montant_total_demande = EXCLUDED.montant_total_demande,
-                montant_total_accorde = EXCLUDED.montant_total_accorde,
-                score_moyen = EXCLUDED.score_moyen,
-                taux_acceptation = EXCLUDED.taux_acceptation,
-                date_maj = CURRENT_TIMESTAMP
-        """
-        
-        execute_query(upsert_query, (
-            institution, user_id, today,
-            stats['nb_creees'], stats['nb_analysees'],
-            stats['nb_acceptees'], stats['nb_refusees'], stats['nb_etude'],
-            stats['montant_total_demande'], stats['montant_total_accorde'],
-            stats['score_moyen'], taux_acceptation
-        ))
-
-
-# =====================================================================
-# 6. UTILITAIRES
+# 5. UTILITAIRES
 # =====================================================================
 
 def require_auth(f):
@@ -543,12 +450,3 @@ def get_user_full_info(user_id: str) -> Optional[Dict]:
     
     result = execute_query(query, (user_id,), fetch=True)
     return dict(result[0]) if result and len(result) > 0 else None
-
-
-def health_check() -> bool:
-    """Vérifie que la connexion à Supabase fonctionne."""
-    query = "SELECT 1"
-    result = execute_query(query, fetch=True)
-    return result is not None
-
-
