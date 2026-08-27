@@ -624,7 +624,13 @@ def evaluer_demande_heuristique(data):
 
 
 def get_historique_demandes():
-    """Récupère l'historique Supabase dans le format utilisé par l'interface."""
+    """
+    Récupère l'historique Supabase dans le format utilisé par l'interface.
+    
+    ⚠️ IMPORTANT : L'historique doit être le MÊME pour tous les agents
+    d'une même institution. Chaque agent voit TOUTES les demandes de son
+    institution, pas seulement les siennes. C'est une exigence métier clé.
+    """
     user = st.session_state.get("user")
     if user:
         demandes = get_demandes(
@@ -709,7 +715,7 @@ def generer_pdf(data, resultat, montant_disponible, taux, mensualite, score_mode
     
     titre_section("INFORMATIONS DE LA DEMANDE")
     deux_colonnes("ID demande", data["id"], "Date d'analyse", datetime.now().strftime("%d/%m/%Y %Hh%M"))
-    deux_colonnes("Agent", st.session_state.user.get('nom_complet', 'Inconnu'), "Institution", st.session_state.institution)
+    deux_colonnes("Agent", st.session_state.agent_nom, "Institution", st.session_state.institution)
     deux_colonnes("Score", f"{score_model}/100" if score_model else "N/A", "Risque estimé", resultat["categorie"])
     pdf.ln(3)
     
@@ -1628,7 +1634,7 @@ def page_export_pdf():
         c1, c2 = st.columns(2)
         with c1:
             st.write(f"ID : {data['id']}")
-            st.write(f"Agent : {st.session_state.user.get('nom_complet', 'Inconnu')}")
+            st.write(f"Agent : {st.session_state.agent_nom}")
         with c2:
             st.write(f"Date : {datetime.now().strftime('%d %B %Y, %Hh%M')}")
             st.write(f"Score ML : {resultat['score']} / 100")

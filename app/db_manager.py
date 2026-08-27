@@ -305,7 +305,17 @@ def get_demandes(
     role: str = "agent",
     institution: str = None,
 ) -> List[Dict]:
-    """Récupère les demandes selon le rôle de l'utilisateur."""
+    """
+    Récupère les demandes de crédit selon le rôle et l'institution de l'utilisateur.
+    
+    LOGIQUE D'ACCÈS UNIFIÉE :
+    ✅ Admin : voit TOUTES les demandes de toutes les institutions
+    ✅ Manager : voit toutes les demandes de son institution
+    ✅ Agent : voit TOUTES les demandes de son institution (PAS juste les siennes)
+    
+    ⚠️ IMPORTANT MÉTIER : Tous les agents d'une même institution voient le MÊME
+    historique complet. Cela facilite la collaboration et la traçabilité.
+    """
     conditions = []
     params = []
 
@@ -316,14 +326,13 @@ def get_demandes(
 
     role = (role or "agent").lower()
 
-    if role == "manager" and institution:
+    # Les admins voient tout, les autres sont filtrés par institution
+    if role != "admin":
+        if not institution:
+            return []
+        # ✅ Tous les agents et managers de l'institution voient toutes les demandes
         conditions.append("u.institution = %s")
         params.append(institution)
-    elif role != "admin":
-        if not user_id:
-            return []
-        conditions.append("d.user_id = %s")
-        params.append(user_id)
 
     if statut:
         conditions.append("d.statut = %s")
@@ -359,7 +368,7 @@ def get_demandes(
     params.append(limit)
     return execute_query(query, tuple(params), fetch=True) or []
 
-@st.cache_data(ttl=10, show_spinner=False)
+
 def get_demande_detail(demande_id: str) -> Optional[Dict]:
     """Récupère tous les détails d'une demande."""
     query = "SELECT * FROM public.demandes_credit WHERE id = %s LIMIT 1"
