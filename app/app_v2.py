@@ -2,16 +2,7 @@
 =====================================================================
  SYSTÈME DE SCORING CRÉDIT CAMEROUN — Application Streamlit V2
 =====================================================================
-Intégration du modèle CatBoost sauvegardé (v1) :
-    • Prédiction en temps réel basée sur la section 4 (Activité professionnelle)
-    • Score de 0 à 100 avec jauge 3 couleurs (vert ≥ 70, orange 40-70, rouge < 40)
-    • Calcul de la catégorie de risque à partir du score
-    • Simulation du montant maximum recommandé selon score, revenu et durée
 
-INTÉGRATION SHAP PAR ANDY :
-    • Waterfall plot et graphique d'importance des variables
-    • Affiché après le score dans la page des résultats
-=====================================================================
 """
 
 import streamlit as st
@@ -22,12 +13,14 @@ import numpy as np
 import joblib
 import os
 import sys
+import uuid
 
 # Ajouter la racine du projet au chemin Python
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import shap_view  # Module SHAP d'Andy (à la racine)
 from catboost import Pool
+
 
 # fpdf2 optionnel pour export PDF
 try:
@@ -37,6 +30,14 @@ try:
 except ImportError:
     FPDF_DISPONIBLE = False
 
+from db_manager import (
+    login_user,
+    register_user,
+    logout_user,
+    save_demande,
+    get_demandes,
+    get_agent_info,
+)
 
 # =====================================================================
 # 0. CHARGEMENT DU MODÈLE ML
@@ -62,6 +63,12 @@ def load_model():
 MODEL_DATA = load_model()
 MODEL = MODEL_DATA['modele'] if MODEL_DATA else None
 FEATURES_NAMES = MODEL_DATA['features'] if MODEL_DATA else []
+
+
+# =====================================================================
+# 0.5 ACCÈS BASE DE DONNÉES
+# =====================================================================
+# La persistance est centralisée dans db_manager.py.
 
 
 # =====================================================================
@@ -179,67 +186,65 @@ SECTEUR_MAPPING = {
 # Profils d'exemple
 EXEMPLES = {
     "favorable": {
-        "nom": "MBARGA", "prenom": "Jean", "adresse": "Quartier Bastos, Yaoundé",
+        "nom": "MANDENG", "prenom": "Francois", "adresse": "Bépanda, Douala",
         "genre": "Masculin", "age": "35-44", "education": "Supérieur",
-        "revenu": 250000, "charges": 80000, "ligne_credit": "Non", "usage_credit": "Professionnel",
+        "revenu": 250000, "charges": 150000, "ligne_credit": "Non", "usage_credit": "Professionnel",
         "personnes_charge": 3, "logement": "Propriétaire", "anciennete": 36,
         "montant_demande": 2000000, "duree": 24, "objet": "Investissement (activité)",
         "secteur": "Salarié formel", "activite_saisonniere": "Non",
-        "mobile_money": "Oui",
-        "garant": "Oui (logement en hypothèque)",
+        "mobile_money": "Oui", "membre_tontine": "Oui", "garant": "Oui (logement en hypothèque)",
     },
     "moyen": {
-        "nom": "NGONO", "prenom": "Marie", "adresse": "Quartier Akwa, Douala",
+        "nom": "NGONO", "prenom": "Manie", "adresse": "Akwa, Douala",
         "genre": "Féminin", "age": "25-34", "education": "Secondaire",
-        "revenu": 150000, "charges": 50000, "ligne_credit": "Oui", "usage_credit": "Personnel",
-        "personnes_charge": 2, "logement": "Locataire", "anciennete": 26,
+        "revenu": 150000, "charges": 800000, "ligne_credit": "Oui", "usage_credit": "Personnel",
+        "personnes_charge": 2, "logement": "Locataire", "anciennete": 25,
         "montant_demande": 800000, "duree": 18, "objet": "Trésorerie",
-        "secteur": "Commerçant indépendant", "activite_saisonniere": "Non",
-        "mobile_money": "Oui",
-        "garant": "Non",
+        "secteur": "Commercant Indépendant", "activite_saisonniere": "Non",
+        "mobile_money": "Oui", "membre_tontine": "Non", "garant": "Non",
     },
     "risque": {
-        "nom": "ABDOULAYE", "prenom": "Oumar", "adresse": "Quartier Domayo, Maroua",
-        "genre": "Masculin", "age": "55-64", "education": "Primaire",
-        "revenu": 65000, "charges": 35000, "ligne_credit": "Oui", "usage_credit": "Personnel",
-        "personnes_charge": 5, "logement": "Hébergé", "anciennete": 8,
+        "nom": "MABO", "prenom": "Oumar", "adresse": "Newbell, Maroua",
+        "genre": "Masculin", "age": "55-64", "education": "Supérieure",
+        "revenu": 65000, "charges": 55000, "ligne_credit": "Oui", "usage_credit": "Personnel",
+        "personnes_charge": 5, "logement": "Locataire", "anciennete": 8,
         "montant_demande": 600000, "duree": 12, "objet": "Autre",
         "secteur": "Activité saisonnière", "activite_saisonniere": "Oui",
-        "mobile_money": "Non",
-        "garant": "Non",
+        "mobile_money": "Oui", "membre_tontine": "Non", "garant": "Non",
     },
 }
 
 VALEURS_PAR_DEFAUT_FORMULAIRE = {
-    "revenu": 250000, "charges": 80000, "personnes_charge": 3, "anciennete": 36,
+    "revenu": 250000, "charges": 150000, "personnes_charge": 3, "anciennete": 36,
     "montant_demande": 2000000, "duree": 24, "objet": OPTIONS_OBJET[0],
     "activite_saisonniere": "Non", "mobile_money": "Oui",
 }
 
 
 # =====================================================================
-# 3. ÉTAT DE SESSION
+# 3. ÉTAT DE SESSION (AVEC SUPABASE)
 # =====================================================================
 def init_session_state():
     """Initialise les variables de session."""
-    valeurs_par_defaut = {
+    defaults = {
         "page": "connexion",
         "authenticated": False,
-        "agent_nom": "KOM Olivier",
-        "institution": "Microfinance XYZ",
-        "demande_id_counter": 13,
+        "registration_message": None,
+        "user": None,
+        "agent_nom": None,
+        "institution": "Microfinance",
+        "demande_id_counter": 1,
         "demande_data": {},
         "dernier_score_model": None,
         "dernier_score_categ": None,
         "dernier_montant_recommande": None,
-        "dernier_facteurs_model": None,
     }
-    for cle, valeur in valeurs_par_defaut.items():
+    for cle, valeur in defaults.items():
         if cle not in st.session_state:
             st.session_state[cle] = valeur
-
+ 
 init_session_state()
-
+ 
 
 # =====================================================================
 # 4. FONCTIONS UTILITAIRES
@@ -656,20 +661,56 @@ def evaluer_demande_heuristique(data):
 
 
 def get_historique_demandes():
-    """Génère un historique de démonstration."""
+    """
+    Récupère l'historique Supabase dans le format utilisé par l'interface.
+    
+    ⚠️ IMPORTANT : L'historique doit être le MÊME pour tous les agents
+    d'une même institution. Chaque agent voit TOUTES les demandes de son
+    institution, pas seulement les siennes. C'est une exigence métier clé.
+    """
+    user = st.session_state.get("user")
+    if user:
+        demandes = get_demandes(
+            user_id=user["id"],
+            role=user.get("role", "agent"),
+            institution=user.get("institution")
+        )
+        if demandes:
+            df = pd.DataFrame(demandes)
+            df["id"] = df["id_demande"]
+            df["date"] = pd.to_datetime(df["date_creation"])
+            df["nom"] = df["nom_demandeur"]
+            df["prenom"] = df["prenom_demandeur"]
+            df["age"] = df["age_tranche"]
+            df["profil"] = df["secteur_activite"]
+            df["montant"] = df["montant_demande"]
+            df["score"] = pd.to_numeric(df["score_ml"], errors="coerce").fillna(0)
+            df["decision"] = df["decision"].fillna("")
+            df["statut"] = df["statut"].fillna("")
+            return df
+
+    # Données de démonstration utilisées uniquement quand aucune demande DB n'existe.
     data = [
-        {"id": "#20260815-0020", "date": "2026-08-15", "profil": "Salarié formel", "age": "35-44 ans", "montant": 2000000, "statut": "Accordé", "score": 72},
-        {"id": "#20260815-0019", "date": "2026-08-15", "profil": "Salarié formel", "age": "35-44 ans", "montant": 3000000, "statut": "Accordé", "score": 72},
-        {"id": "#20260815-0018", "date": "2026-08-15", "profil": "Commerçant indépendant", "age": "25-34 ans", "montant": 1500000, "statut": "Étude approfondie", "score": 58},
-        {"id": "#20260815-0017", "date": "2026-08-15", "profil": "Activité saisonnière", "age": "45-54 ans", "montant": 800000, "statut": "Refusé", "score": 37},
-        {"id": "#20260814-0016", "date": "2026-08-14", "profil": "Fonctionnaire", "age": "45-54 ans", "montant": 5000000, "statut": "Accordé", "score": 81},
+        {"id": "#20260815-0020", "date": "2026-08-15", "profil": "Salarié formel", "age": "35-44 ans", "montant": 2000000, "statut": "Accordé", "decision": "ACCORDÉ", "score": 72},
+        {"id": "#20260815-0019", "date": "2026-08-15", "profil": "Salarié formel", "age": "35-44 ans", "montant": 3000000, "statut": "Accordé", "decision": "ACCORDÉ", "score": 72},
+        {"id": "#20260815-0018", "date": "2026-08-15", "profil": "Commerçant indépendant", "age": "25-34 ans", "montant": 1500000, "statut": "Étude approfondie", "decision": "ÉTUDE APPROFONDIE", "score": 58},
+        {"id": "#20260815-0017", "date": "2026-08-15", "profil": "Activité saisonnière", "age": "45-54 ans", "montant": 800000, "statut": "Refusé", "decision": "REFUSÉ", "score": 37},
+        {"id": "#20260814-0016", "date": "2026-08-14", "profil": "Fonctionnaire", "age": "45-54 ans", "montant": 5000000, "statut": "Accordé", "decision": "ACCORDÉ", "score": 81},
     ]
     df = pd.DataFrame(data)
     df["date"] = pd.to_datetime(df["date"])
+    df["date_creation"] = df["date"]
+    df["categorie_risque"] = df["profil"]
+    df["nom"] = ""
+    df["prenom"] = ""
+    df["id_demande"] = df["id"]
+    df["nom_demandeur"] = df["nom"]
+    df["montant_demande"] = df["montant"]
+    df["score_ml"] = df["score"]
     return df
 
 
-def generer_pdf(data, resultat, montant_accorde, taux, mensualite, score_model=None):
+def generer_pdf(data, resultat, montant_disponible, taux, mensualite, score_model=None):
     """Génère le rapport PDF."""
     if not FPDF_DISPONIBLE:
         return None
@@ -722,11 +763,28 @@ def generer_pdf(data, resultat, montant_accorde, taux, mensualite, score_model=N
     pdf.ln(3)
     
     titre_section("DEMANDE DE CREDIT")
-    deux_colonnes("Montant demandé", format_fcfa(data["montant_demande"]), "Montant accordé", format_fcfa(montant_accorde))
-    deux_colonnes("Objet du prêt", f"{data['objet']} mois", "Durée", f"{data['duree']} mois")
+    # Afficher le montant disponible UNIQUEMENT pour ÉTUDE APPROFONDIE et REFUSÉ
+    if resultat["decision"] in ("ÉTUDE APPROFONDIE", "REFUSÉ"):
+        deux_colonnes(
+            "Montant demandé",
+            format_fcfa(data["montant_demande"]),
+            "Montant disponible",
+            format_fcfa(montant_disponible)
+        )
+    else:
+        # Pour ACCORDÉ, afficher uniquement le montant demandé
+        pdf.cell(90, 6, texte(f"Montant demandé : {format_fcfa(data['montant_demande'])}"))
+        pdf.ln(6)
+    
+    deux_colonnes(
+        "Objet du prêt",
+        data["objet"],
+        "Durée",
+        f"{data['duree']} mois"
+    )    
     pdf.ln(3)
     
-    titre_section("ANALYSE DU RISQUE (MODELE ML)")
+    titre_section("ANALYSE DU RISQUE")
     pdf.set_font("Helvetica", "B", 13)
     pdf.cell(0, 8, texte(f"Score ML : {score_model}/100  |  Risque : {resultat['categorie']}  |  {resultat['decision']}"),
              new_x=XPos.LMARGIN, new_y=YPos.NEXT)
@@ -796,12 +854,19 @@ def render_sidebar():
         
         st.divider()
         if st.button("Déconnexion", width="stretch", key="nav_deconnexion"):
+            if st.session_state.get("user"):
+                logout_user(
+                    st.session_state.user["id"],
+                    st.session_state.user.get("session_id", "")
+                )
             st.session_state.authenticated = False
+            st.session_state.user = None
             go_to("connexion")
         
         st.divider()
-        st.caption(f"**Agent :** {st.session_state.agent_nom}")
-        st.caption(st.session_state.institution)
+        if st.session_state.user:
+            st.caption(f"**Agent :** {st.session_state.user['nom_complet']}")
+            st.caption(st.session_state.user.get('institution', 'Microfinance'))
         
         st.divider()
         if MODEL:
@@ -846,26 +911,6 @@ def render_jauge_score(score, couleur):
     fig.update_layout(height=230, margin=dict(l=15, r=15, t=35, b=10))
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-
-def render_graphique_facteurs(facteurs):
-    """Diagramme en barres des facteurs."""
-    noms = [f[0] for f in facteurs]
-    impacts = [f[2] for f in facteurs]
-    couleurs = ["#16a34a" if v >= 0 else "#dc2626" for v in impacts]
-    textes = [f"−{v}pp" if v >= 0 else f"+{abs(v)}pp" for v in impacts]
-
-    fig = go.Figure(go.Bar(
-        x=impacts, y=noms, orientation="h",
-        marker_color=couleurs, text=textes, textposition="outside",
-    ))
-    fig.update_layout(
-        title="Impact sur le risque (points de pourcentage)",
-        height=260, margin=dict(l=10, r=30, t=40, b=10),
-        xaxis_title=None, yaxis_title=None,
-    )
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-
-
 # =====================================================================
 # 6. PAGE 1 — CONNEXION
 # =====================================================================
@@ -900,21 +945,35 @@ def page_connexion():
                 "<h3 style='text-align: center;'>Connexion agent</h3>",
                 unsafe_allow_html=True
             )
-            identifiant = st.text_input("Email ou Nom d'utilisateur", placeholder="exemple@imf.cm")
-            mot_de_passe = st.text_input("Mot de passe", type="password")
+            identifiant = st.text_input(
+                "Email ou Nom d'utilisateur",
+                placeholder="exemple@imf.cm",
+            )
+            mot_de_passe = st.text_input(
+                "Mot de passe",
+                type="password",
+            )
             st.checkbox("Rester connecté")
             
             if st.button("CONNEXION", width="stretch", type="primary"):
                 if identifiant.strip() and mot_de_passe.strip():
-                    st.session_state.authenticated = True
-                    st.session_state.login_erreur = False
-                    go_to("tableau_de_bord")
+                    user = login_user(identifiant, mot_de_passe)
+                    if user:
+                        st.session_state.authenticated = True
+                        st.session_state.user = user
+                        go_to("tableau_de_bord")
+                    else:
+                        st.error("Email ou mot de passe incorrect")
                 else:
-                    st.session_state.login_erreur = True
-            
-            if st.session_state.get("login_erreur"):
-                st.error("Veuillez renseigner votre identifiant et votre mot de passe.")
-            
+                    st.error("Veuillez renseigner identifiant et mot de passe")
+
+            if st.session_state.registration_message:
+                st.success(st.session_state.registration_message)
+                st.session_state.registration_message = None
+
+            if st.button("Créer un compte", width="stretch"):
+                go_to("register")
+
             st.markdown(
                 "<p style='text-align:center; color:#64748b; font-size:0.9em;'>"
                 "Mot de passe oublié? · Aide</p>",
@@ -929,6 +988,71 @@ def page_connexion():
 
 
 # =====================================================================
+# 6.1 PAGE — INSCRIPTION
+# =====================================================================
+def page_register():
+    """Crée un compte utilisateur avec register_user()."""
+    st.markdown(
+        """
+        <style>
+        .stApp { background: linear-gradient(160deg, #0f2b21 0%, #14243f 100%); }
+        [data-testid="collapsedControl"] { display: none; }
+        section[data-testid="stSidebar"] { display: none; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    _, col_centre, _ = st.columns([1, 1.8, 1])
+    with col_centre:
+        st.markdown(
+            "<h2 style='text-align:center; color:white;'>Créer un compte</h2>",
+            unsafe_allow_html=True,
+        )
+        with st.container(border=True):
+            nom_complet = st.text_input("Nom complet *", placeholder="Ex : KOM Olivier")
+            email = st.text_input("Email professionnel *", placeholder="exemple@imf.cm")
+            institution = st.text_input("Institution *", value="Microfinance XYZ")
+            col_password, col_confirmation = st.columns(2)
+            with col_password:
+                mot_de_passe = st.text_input("Mot de passe *", type="password")
+            with col_confirmation:
+                confirmation = st.text_input("Confirmer le mot de passe *", type="password")
+
+            if st.button("Créer le compte", width="stretch", type="primary"):
+                email = email.strip().lower()
+                nom_complet = nom_complet.strip()
+                institution = institution.strip()
+
+                if not nom_complet or not email or not institution or not mot_de_passe:
+                    st.error("Veuillez renseigner tous les champs obligatoires.")
+                elif "@" not in email:
+                    st.error("Veuillez saisir une adresse email valide.")
+                elif mot_de_passe != confirmation:
+                    st.error("Les mots de passe ne correspondent pas.")
+                elif len(mot_de_passe) < 8:
+                    st.error("Le mot de passe doit contenir au moins 8 caractères.")
+                else:
+                    succes, message = register_user(
+                        email, mot_de_passe, nom_complet, institution, "agent"
+                    )
+                    if succes:
+                        st.session_state.registration_message = message
+                        go_to("connexion")
+                    else:
+                        st.error(message)
+
+            if st.button("Retour à la connexion", width="stretch"):
+                go_to("connexion")
+
+    st.markdown(
+        "<p style='text-align:center; color:#c9d3e3; font-size:0.85em; margin-top:14px;'>"
+        "Connexion sécurisée</p>",
+        unsafe_allow_html=True,
+    )
+
+
+# =====================================================================
 # 7. PAGE 2 — TABLEAU DE BORD
 # =====================================================================
 def page_tableau_de_bord():
@@ -939,8 +1063,8 @@ def page_tableau_de_bord():
     
     col_titre, col_bouton = st.columns([3, 1])
     with col_titre:
-        prenom = st.session_state.agent_nom.split()[0] if st.session_state.agent_nom else "Agent"
-        st.title(f"Bienvenue, Agent {prenom} 👋")
+        nom = st.session_state.user.get("nom_complet", "Agent") if st.session_state.user else "Agent"
+        st.title(f"Bienvenue, Agent {nom} 👋")
         st.caption(datetime.now().strftime("%A %d %B %Y — %Hh%M"))
     with col_bouton:
         st.write("")
@@ -950,27 +1074,27 @@ def page_tableau_de_bord():
     
     st.subheader("Aujourd'hui")
     df = get_historique_demandes()
-    jour_recent = df["date"].max()
-    du_jour = df[df["date"] == jour_recent]
+    if not df.empty:
+        du_jour = df[pd.to_datetime(df["date_creation"]).dt.date == datetime.now().date()]
     
-    nb_total = len(du_jour)
-    nb_accordees = int((du_jour["statut"] == "Accordé").sum())
-    nb_refusees = int((du_jour["statut"] == "Refusé").sum())
-    nb_etude = int((du_jour["statut"] == "Étude approfondie").sum())
-    
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        with st.container(border=True):
-            st.metric("Demandes du jour", nb_total, f"{nb_total} demandes analysées" if nb_total else "Aucune demande")
-    with c2:
-        with st.container(border=True):
-            st.metric("Accordées", nb_accordees, f"{nb_accordees / nb_total * 100:.0f}% des demandes" if nb_total else None)
-    with c3:
-        with st.container(border=True):
-            st.metric("Refusées", nb_refusees, f"{nb_refusees / nb_total * 100:.0f}% des demandes" if nb_total else None)
-    with c4:
-        with st.container(border=True):
-            st.metric("En étude", nb_etude, f"{nb_etude / nb_total * 100:.0f}% des demandes" if nb_total else None)
+        nb_total = len(du_jour)
+        nb_accordees = int((du_jour["decision"] == "ACCORDÉ").sum()) if "decision" in du_jour.columns else 0
+        nb_refusees = int((du_jour["decision"] == "REFUSÉ").sum()) if "decision" in du_jour.columns else 0
+        nb_etude = int((du_jour["decision"] == "ÉTUDE APPROFONDIE").sum()) if "decision" in du_jour.columns else 0
+        
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            with st.container(border=True):
+                st.metric("Demandes", nb_total)
+        with c2:
+            with st.container(border=True):
+                st.metric("Accordées", nb_accordees)
+        with c3:
+            with st.container(border=True):
+                st.metric("Refusées", nb_refusees)
+        with c4:
+            with st.container(border=True):
+                st.metric("En étude", nb_etude)
     
     st.write("")
     col_gauche, col_droite = st.columns([2, 1])
@@ -983,15 +1107,24 @@ def page_tableau_de_bord():
                 if st.button("NOUVELLE DEMANDE", width="stretch", type="primary", key="qa_nouvelle"):
                     go_to("nouvelle_demande")
             with b2:
-                if st.button("DEMANDES RÉCENTES", width="stretch", key="qa_historique"):
+                if st.button("DEMANDES RÉCENTES", width="stretch"):
+                    if not df.empty:
+                        recentes = df.head(5)
+                        st.dataframe(
+                            recentes[["id", "nom", "montant", "decision", "score"]],
+                            use_container_width=True, hide_index=True,
+
+                        )
+                    else:
+                        st.info("Aucune demande enregistrée")
                     go_to("historique")
             
             st.write("**Demandes récentes**")
-            recentes = df.sort_values("date", ascending=False).head(3)[["id", "profil", "age", "statut", "score"]]
+            recentes = df.sort_values("date", ascending=False).head(3)[["id", "profil", "age", "decision", "score"]]
             st.dataframe(
                 recentes,
                 column_config={
-                    "id": "ID", "profil": "Profil", "age": "Âge", "statut": "Statut",
+                    "id": "ID", "profil": "Profil", "age": "Âge", "decision": "Statut",
                     "score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d/100"),
                 },
                 hide_index=True, use_container_width=True,
@@ -1017,7 +1150,7 @@ def page_nouvelle_demande():
     render_entete()
     
     st.title("Nouvelle demande de prêt")
-    nouvel_id = f"#{datetime.now().strftime('%Y%m%d')}-{st.session_state.demande_id_counter:04d}"
+    nouvel_id = f"#{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:8].upper()}"
     st.caption(f"ID demande : {nouvel_id} · Statut : Saisie en cours · Mode : ML Prédictif")
     
     init_formulaire_defaults()
@@ -1265,7 +1398,7 @@ def page_nouvelle_demande():
     with b4:
         if st.button("Analyser la demande", type="primary", width="stretch",
                       disabled=bool(champs_manquants)):
-            st.session_state.demande_data = {
+            demande_data = {
                 "id": nouvel_id, "nom": nom.strip(), "prenom": prenom.strip(), "adresse": adresse.strip(),
                 "genre": genre, "age": age, "education": education,
                 "revenu": revenu, "charges": charges, "ratio_endettement": ratio,
@@ -1275,8 +1408,31 @@ def page_nouvelle_demande():
                 "secteur": secteur, "activite_saisonniere": activite_saisonniere,
                 "mobile_money": mobile_money, "membre_tontine": membre_tontine, "garant": garant,
             }
-            st.session_state.demande_id_counter += 1
-            go_to("resultats")
+            demande_data.update({
+                "score_ml": st.session_state.get("dernier_score_model"),
+                "categorie_risque": st.session_state.get("dernier_score_categ"),
+                "proba_defaut": (
+                    (100 - st.session_state.dernier_score_model)
+                    if st.session_state.get("dernier_score_model") is not None else None
+                ),
+                "decision": (
+                    "ACCORDÉ" if st.session_state.dernier_score_model >= 65
+                    else "ÉTUDE APPROFONDIE" if st.session_state.dernier_score_model >= 45
+                    else "REFUSÉ"
+                ) if st.session_state.get("dernier_score_model") is not None else None,
+                "source_score": "ML" if st.session_state.get("dernier_score_model") is not None else "HEURISTIQUE",
+            })
+
+            user = st.session_state.get("user")
+            demande_id = save_demande(demande_data, user["id"]) if user else None
+            if demande_id:
+                get_demandes.clear()
+                demande_data["id"] = demande_id
+                st.session_state.demande_data = demande_data
+                st.session_state.demande_id_counter += 1
+                go_to("resultats")
+            else:
+                st.error("La demande n'a pas pu être enregistrée. Vérifiez la connexion à la base de données.")
 
 
 # =====================================================================
@@ -1351,22 +1507,38 @@ def page_resultats():
         with st.container(border=True):
             if resultat["decision"] == "ACCORDÉ":
                 st.success(f"DÉCISION : {resultat['decision']}")
-                montant_accorde = montant_recommande
+                montant_disponible = montant_recommande
+
             elif resultat["decision"] == "ÉTUDE APPROFONDIE":
                 st.warning(f"DÉCISION : {resultat['decision']}")
-                montant_accorde = round(montant_recommande * 0.50 / 1000) * 1000
+                montant_disponible = round(montant_recommande * 0.50 / 1000) * 1000
             else:
                 st.error(f"DÉCISION : {resultat['decision']}")
-                montant_accorde = 0
+                montant_disponible = 0
 
             st.caption(resultat["resume"])
 
             taux_indicatif = 18.5 if resultat["score"] >= 55 else 22.0
-            mensualite = calculer_mensualite(montant_accorde, taux_indicatif, data["duree"]) if montant_accorde else 0
-            
+
+            # ACCORDÉ      → montant demandé
+            # ÉTUDE        → montant disponible
+            # REFUSÉ       → montant disponible (= 0)
+            if resultat["decision"] == "ACCORDÉ":
+                montant_base_mensualite = data["montant_demande"]
+            else:
+                montant_base_mensualite = montant_disponible
+
+            mensualite = (calculer_mensualite(montant_base_mensualite, taux_indicatif, data["duree"])
+                if montant_base_mensualite > 0
+                else 0
+            )    
+
             cc1, cc2 = st.columns(2)
             with cc1:
-                st.metric("Montant accordé", format_fcfa(montant_accorde))
+                # Afficher le montant disponible UNIQUEMENT pour ÉTUDE APPROFONDIE et REFUSÉ
+                if resultat["decision"] in ("ÉTUDE APPROFONDIE", "REFUSÉ"):
+                    st.metric("Montant disponible", format_fcfa(montant_disponible))
+
                 st.metric("Taux indicatif", f"{taux_indicatif} %")
                 st.metric("Mensualité estimée", format_fcfa(mensualite))
             with cc2:
@@ -1408,14 +1580,6 @@ def page_resultats():
     # ==========================================================
     # INTÉGRATION SHAP PAR ANDY - GRAPHIQUES EXPLICATIFS
     # ==========================================================
-    # Réutilise construire_features_pour_modele() - la même fonction qui a
-    # servi à calculer le score affiché - plutôt que de reconstruire un dict
-    # à la main : shap_view.preparer_donnees_client() ne fait aucun encodage
-    # one-hot, donc lui passer les valeurs brutes de objet_pret/secteur_activite
-    # (ex. "Achat d'équipement") laissait toutes les colonnes objet_pret_*/
-    # secteur_activite_* à 0, pour tous les clients. En partant du vecteur
-    # déjà encodé, les graphiques SHAP portent garantis sur les mêmes valeurs
-    # que le score et les facteurs explicatifs affichés au-dessus.
     features_ml = construire_features_pour_modele(data)
     donnees_client = dict(zip(FEATURES_NAMES, features_ml[0]))
 
@@ -1439,7 +1603,7 @@ def page_resultats():
     with b3:
         if st.button("Exporter en PDF", type="primary", width="stretch"):
             st.session_state.dernier_resultat = resultat
-            st.session_state.montant_accorde = montant_accorde
+            st.session_state.montant_disponible = montant_disponible            
             st.session_state.taux_indicatif = taux_indicatif
             st.session_state.mensualite = mensualite
             go_to("export_pdf")
@@ -1460,7 +1624,7 @@ def page_export_pdf():
         return
     
     resultat = st.session_state.get("dernier_resultat") or evaluer_demande_heuristique(data)
-    montant_accorde = st.session_state.get("montant_accorde", 0)
+    montant_disponible = st.session_state.get("montant_disponible", 0)
     taux_indicatif = st.session_state.get("taux_indicatif", 18.5)
     mensualite = st.session_state.get("mensualite", 0)
     
@@ -1474,7 +1638,14 @@ def page_export_pdf():
     with col2:
         if FPDF_DISPONIBLE:
             score_model = st.session_state.dernier_score_model
-            pdf_bytes = generer_pdf(data, resultat, montant_accorde, taux_indicatif, mensualite, score_model)
+            pdf_bytes = generer_pdf(
+                data,
+                resultat,
+                montant_disponible,
+                taux_indicatif,
+                mensualite,
+                score_model
+            )            
             st.download_button(
                 "Télécharger le PDF", data=pdf_bytes,
                 file_name=f"rapport_{data['id'].strip('#')}.pdf", mime="application/pdf",
@@ -1531,8 +1702,11 @@ def page_export_pdf():
             st.write(f"Montant demandé : {format_fcfa(data['montant_demande'])}")
             st.write(f"Durée : {data['duree']} mois")
         with c2:
-            st.write(f"Montant accordé : {format_fcfa(montant_accorde)}")
-            st.write(f"Taux : {taux_indicatif} %")
+            # Afficher le montant disponible UNIQUEMENT pour ÉTUDE APPROFONDIE et REFUSÉ
+            if resultat["decision"] in ("ÉTUDE APPROFONDIE", "REFUSÉ"):
+                st.write(f"Montant disponible : {format_fcfa(montant_disponible)}")
+            st.write(f"Taux indicatif : {taux_indicatif} %")
+
         st.divider()
         
         st.markdown("**✅ ANALYSE DU RISQUE**")
@@ -1571,31 +1745,40 @@ def page_historique():
     
     c1, c2, c3 = st.columns([2, 2, 1.3])
     with c1:
-        statuts = st.multiselect("Filtrer par statut", options=sorted(df["statut"].unique().tolist()),
-                                  default=sorted(df["statut"].unique().tolist()))
+        decisions = sorted(df["decision"].dropna().unique().tolist())
+        decisions_selectionnes = st.multiselect(
+            "Filtrer par statut", options=decisions , default=decisions
+        )
     with c2:
         score_min, score_max = st.slider("Plage de score", 0, 100, (0, 100))
     with c3:
         recherche = st.text_input("Rechercher un ID", "")
     
-    df_filtre = df[df["statut"].isin(statuts)]
+    df_filtre = df[df["decision"].isin(decisions_selectionnes)]
     df_filtre = df_filtre[(df_filtre["score"] >= score_min) & (df_filtre["score"] <= score_max)]
     if recherche:
         df_filtre = df_filtre[df_filtre["id"].str.contains(recherche, case=False)]
     df_filtre = df_filtre.sort_values("date", ascending=False)
     
     st.caption(f"{len(df_filtre)} demande(s) trouvée(s) sur {len(df)}")
+    historique_visible = df_filtre[
+        ["id", "date", "profil", "age", "montant", "decision", "score"]
+    ].rename(columns={
+        "id": "ID demande",
+        "date": "Date",
+        "profil": "Profil",
+        "age": "Tranche d'âge",
+        "montant": "Montant demandé",
+        "decision": "Décision",
+        "score": "Score",
+    })
     
     st.dataframe(
-        df_filtre,
+        historique_visible,
         column_config={
-            "id": "ID Demande",
-            "date": st.column_config.DateColumn("Date", format="DD/MM/YYYY"),
-            "profil": "Profil",
-            "age": "Tranche d'âge",
-            "montant": st.column_config.NumberColumn("Montant demandé", format="%d FCFA"),
-            "statut": "Statut",
-            "score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d/100"),
+            "Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY"),
+            "Montant demandé": st.column_config.NumberColumn("Montant demandé", format="%d FCFA"),
+            "Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d/100"),
         },
         use_container_width=True,
         hide_index=True,
@@ -1613,11 +1796,16 @@ def page_parametres():
     st.title("Paramètres")
     
     st.subheader("Profil de l'agent")
+    utilisateur = st.session_state.get("user") or {}
+    agent_db = get_agent_info(utilisateur["id"]) if utilisateur.get("id") else None
+    profil_db = agent_db or utilisateur
+    nom_agent_db = profil_db.get("nom_complet", "")
+    institution_db = profil_db.get("institution", "Microfinance")
     c1, c2 = st.columns(2)
     with c1:
-        nouveau_nom = st.text_input("Nom de l'agent", value=st.session_state.agent_nom)
+        nouveau_nom = st.text_input("Nom de l'agent", value=nom_agent_db)
     with c2:
-        nouvelle_institution = st.text_input("Institution", value=st.session_state.institution)
+        nouvelle_institution = st.text_input("Institution", value=institution_db)
     if st.button("Enregistrer"):
         st.session_state.agent_nom = nouveau_nom
         st.session_state.institution = nouvelle_institution
@@ -1663,10 +1851,12 @@ def page_parametres():
 def main():
     """Point d'entrée principal."""
     if not st.session_state.authenticated and st.session_state.page != "connexion":
-        st.session_state.page = "connexion"
+        if st.session_state.page != "register":
+            st.session_state.page = "connexion"
     
     routes = {
         "connexion": page_connexion,
+        "register": page_register,
         "tableau_de_bord": page_tableau_de_bord,
         "nouvelle_demande": page_nouvelle_demande,
         "resultats": page_resultats,
