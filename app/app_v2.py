@@ -1,8 +1,9 @@
 """
 =====================================================================
- SYSTÈME DE SCORING CRÉDIT CAMEROUN — Application Streamlit V2
+ CREDORA — Système de scoring crédit (Cameroun) — Application Streamlit
 =====================================================================
-
+Credora = Credit + Aurora : apporter de la clarté sur la décision de
+credit grace aux donnees et au scoring.
 """
 
 import streamlit as st
@@ -14,6 +15,7 @@ import joblib
 import os
 import sys
 import uuid
+import base64
 
 # Ajouter la racine du projet au chemin Python
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -65,6 +67,22 @@ MODEL = MODEL_DATA['modele'] if MODEL_DATA else None
 FEATURES_NAMES = MODEL_DATA['features'] if MODEL_DATA else []
 
 
+@st.cache_data
+def charger_logo_base64(nom_fichier):
+    """Charge un asset du logo (dossier app/assets/) et l'encode en base64
+    pour l'incorporer directement dans le HTML (pas de serveur de fichiers
+    statiques a configurer)."""
+    chemin = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", nom_fichier)
+    try:
+        with open(chemin, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    except FileNotFoundError:
+        return None
+
+
+LOGO_ICONE_B64 = charger_logo_base64("credora-icon.svg")
+
+
 # =====================================================================
 # 0.5 ACCÈS BASE DE DONNÉES
 # =====================================================================
@@ -74,77 +92,90 @@ FEATURES_NAMES = MODEL_DATA['features'] if MODEL_DATA else []
 # =====================================================================
 # 1. CONFIGURATION GÉNÉRALE DE LA PAGE
 # =====================================================================
+NOM_APP = "Credora"
+
+# --- Palette de marque (identité visuelle Credora, validée en equipe) ---
+# Distincte des couleurs de risque (vert/orange/rouge) utilisees ailleurs
+# pour le score - celles-la ne changent pas, ce sont des signaux metier.
+COULEUR_PRIMAIRE = "#1B5E3F"        # vert foret - institutionnel, confiance
+COULEUR_PRIMAIRE_SOMBRE = "#163f2c"  # variante hover/active
+COULEUR_ACCENT = "#E8A33D"          # ambre - chaleur, touche joyeuse
+COULEUR_ACCENT_2 = "#D96C4A"        # corail - accent secondaire
+COULEUR_FOND = "#FAF6EF"            # creme - plus chaleureux qu'un blanc pur
+COULEUR_TEXTE = "#2B2B2B"           # anthracite - plus doux qu'un noir pur
+COULEUR_BORDURE = "#E4DCC9"
+
 st.set_page_config(
-    page_title="Système de Scoring Crédit Cameroun",
-    page_icon="🏦",
+    page_title=f"{NOM_APP} — Scoring Crédit Cameroun",
+    page_icon="🌅",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 # --- CSS commun à toute l'application ---
 st.markdown(
-    """
+    f"""
     <style>
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
-        div[data-testid="stMetricValue"] { font-size: 1.6rem; }
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
 
-        /* --- Sidebar en vert --- */
-        section[data-testid="stSidebar"] {
-            background-color: #1f9d55 !important;
-        }
-        
-        /* --- Textes blancs dans le sidebar --- */
-        section[data-testid="stSidebar"] {
-            color: white !important;
-            background-color: #1f9d55 !important;
-        }
-        section[data-testid="stSidebar"] * {
-            color: white !important;
-            background-color: #178449 !important;
-        }
-        
+        html, body, [class*="css"] {{
+            font-family: 'Poppins', 'Segoe UI', system-ui, sans-serif;
+        }}
+
+        #MainMenu {{visibility: hidden;}}
+        footer {{visibility: hidden;}}
+        div[data-testid="stMetricValue"] {{ font-size: 1.6rem; }}
+
+        /* --- Sidebar : vert de marque --- */
+        section[data-testid="stSidebar"] {{
+            background-color: {COULEUR_PRIMAIRE} !important;
+        }}
+        section[data-testid="stSidebar"] * {{
+            color: #ffffff !important;
+            background-color: {COULEUR_PRIMAIRE} !important;
+        }}
+
         /* --- Dashboard/Contenu principal --- */
-        .main {
-            background-color: #ffffff !important;
-        }
+        .main {{
+            background-color: {COULEUR_FOND} !important;
+        }}
         .main p, .main h1, .main h2, .main h3, .main h4, .main h5, .main h6,
-        .main span, .main label, .main div {
-            color: #000000 !important;
-        }
+        .main span, .main label, .main div {{
+            color: {COULEUR_TEXTE} !important;
+        }}
 
-        /* --- Boutons : thème vert cohérent --- */
-        button[data-testid="stBaseButton-secondary"] {
-            color: #1f9d55;
-            border: 1px solid #1f9d55;
-            background-color: #ffffff;
-        }
-        button[data-testid="stBaseButton-secondary"]:hover {
+        /* --- Boutons : thème de marque --- */
+        button[data-testid="stBaseButton-secondary"] {{
+            color: {COULEUR_PRIMAIRE};
+            border: 1px solid {COULEUR_PRIMAIRE};
+            background-color: {COULEUR_FOND};
+        }}
+        button[data-testid="stBaseButton-secondary"]:hover {{
             color: #ffffff;
-            border-color: #178449;
-            background-color: #1f9d55;
-        }
+            border-color: {COULEUR_PRIMAIRE_SOMBRE};
+            background-color: {COULEUR_PRIMAIRE};
+        }}
         button[data-testid="stBaseButton-secondary"]:disabled,
-        button[data-testid="stBaseButton-secondary"]:disabled:hover {
+        button[data-testid="stBaseButton-secondary"]:disabled:hover {{
             color: #94a3b8;
             border-color: #cbd5e1;
             background-color: #f8fafc;
-        }
-        button[data-testid="stBaseButton-primary"] {
-            background-color: #1f9d55;
-            border-color: #1f9d55;
+        }}
+        button[data-testid="stBaseButton-primary"] {{
+            background-color: {COULEUR_PRIMAIRE};
+            border-color: {COULEUR_PRIMAIRE};
             color: #ffffff;
-        }
-        button[data-testid="stBaseButton-primary"]:hover {
-            background-color: #178449;
-            border-color: #178449;
-        }
+        }}
+        button[data-testid="stBaseButton-primary"]:hover {{
+            background-color: {COULEUR_PRIMAIRE_SOMBRE};
+            border-color: {COULEUR_PRIMAIRE_SOMBRE};
+        }}
         button[data-testid="stBaseButton-primary"]:disabled,
-        button[data-testid="stBaseButton-primary"]:disabled:hover {
+        button[data-testid="stBaseButton-primary"]:disabled:hover {{
             background-color: #cbd5e1;
             border-color: #cbd5e1;
             color: #64748b;
-        }
+        }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -742,7 +773,7 @@ def generer_pdf(data, resultat, montant_disponible, taux, mensualite, score_mode
     pdf.cell(0, 10, texte("RAPPORT D'ANALYSE - DEMANDE DE PRET"), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
     pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 6, texte(f"{st.session_state.institution} - Systeme de Scoring Credit"),
+    pdf.cell(0, 6, texte(f"{st.session_state.institution} - {NOM_APP}"),
              new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
     pdf.set_text_color(0, 0, 0)
     pdf.ln(2)
@@ -827,7 +858,7 @@ def generer_pdf(data, resultat, montant_disponible, taux, mensualite, score_mode
     pdf.ln(3)
     pdf.set_font("Helvetica", "I", 8)
     pdf.set_text_color(150, 150, 150)
-    pdf.cell(0, 6, texte("Généré par Système de Scoring Credit Cameroun"), align="C")
+    pdf.cell(0, 6, texte(f"Généré par {NOM_APP} — Scoring Crédit Cameroun"), align="C")
     
     return bytes(pdf.output())
 
@@ -838,8 +869,20 @@ def generer_pdf(data, resultat, montant_disponible, taux, mensualite, score_mode
 def render_sidebar():
     """Menu latéral."""
     with st.sidebar:
-        st.markdown("## Évaluer intelligemment le risque de crédit ")
-        
+        if LOGO_ICONE_B64:
+            st.markdown(
+                f"""
+                <div style="display:flex; align-items:center; gap:10px; margin-bottom:2px;">
+                    <img src="data:image/svg+xml;base64,{LOGO_ICONE_B64}" width="32" height="32">
+                    <span style="font-size:1.4em; font-weight:700; color:#ffffff;">{NOM_APP}</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(f"## {NOM_APP}")
+        st.caption("Évaluer intelligemment le risque de crédit")
+
         st.divider()
         pages_menu = [
             ("Tableau de bord", "tableau_de_bord"),
@@ -875,15 +918,15 @@ def render_sidebar():
             st.error("❌ Modèle ML non disponible")
 
 
-def render_entete(sous_titre="Évaluation du risque de defaut de crédit"):
+def render_entete(sous_titre="Évaluation du risque de défaut de crédit"):
     """Bandeau d'en-tête."""
     st.markdown(
         f"""
-        <div style="background-color:#16233f; padding:14px 22px; border-radius:8px; margin-bottom:20px;">
-            <span style="color:white; font-size:1.25em; font-weight:700;">
-                SYSTÈME DE SCORING CRÉDIT CAMEROUN
+        <div style="background-color:{COULEUR_PRIMAIRE}; padding:14px 22px; border-radius:8px; margin-bottom:20px;">
+            <span style="color:#ffffff; font-size:1.25em; font-weight:700;">
+                {NOM_APP} <span style="font-weight:400; opacity:0.85;">— Scoring Crédit Cameroun</span>
             </span><br>
-            <span style="color:#c9d3e3; font-size:0.85em;">{sous_titre}</span>
+            <span style="color:#e5ded0; font-size:0.85em;">{sous_titre}</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -899,7 +942,7 @@ def render_jauge_score(score, couleur):
         gauge={
             "axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": "#94a3b8"},
             "bar": {"color": couleur, "thickness": 0.28},
-            "bgcolor": "white",
+            "bgcolor": COULEUR_FOND,
             "borderwidth": 0,
             "steps": [
                 {"range": [0, 40], "color": "#fee2e2"},
@@ -917,23 +960,28 @@ def render_jauge_score(score, couleur):
 def page_connexion():
     """Écran de connexion."""
     st.markdown(
-        """
+        f"""
         <style>
-        .stApp { background: linear-gradient(160deg, #0f2b21 0%, #14243f 100%); }
-        [data-testid="collapsedControl"] { display: none; }
-        section[data-testid="stSidebar"] { display: none; }
+        .stApp {{ background: linear-gradient(160deg, {COULEUR_PRIMAIRE_SOMBRE} 0%, {COULEUR_PRIMAIRE} 100%); }}
+        [data-testid="collapsedControl"] {{ display: none; }}
+        section[data-testid="stSidebar"] {{ display: none; }}
         </style>
         """,
         unsafe_allow_html=True,
     )
-    
+
     _, col_centre, _ = st.columns([1, 1.8, 1])
     with col_centre:
+        logo_html = (
+            f'<img src="data:image/svg+xml;base64,{LOGO_ICONE_B64}" width="56" height="56"><br>'
+            if LOGO_ICONE_B64 else ""
+        )
         st.markdown(
-            """
+            f"""
             <div style='text-align:center; margin-top:20px;'>
-                <h2 style='color:white; margin-bottom:0;'>SYSTÈME DE SCORING CRÉDIT</h2>
-                <span style='color:#c9d3e3;'>Cameroun — Modèle Catboost intégré</span>
+                {logo_html}
+                <h1 style='color:#ffffff; margin:8px 0 0 0; font-weight:700;'>{NOM_APP}</h1>
+                <span style='color:#e5ded0;'>Cameroun — Scoring crédit avec modèle CatBoost intégré</span>
             </div>
             """,
             unsafe_allow_html=True,
@@ -961,6 +1009,10 @@ def page_connexion():
                     if user:
                         st.session_state.authenticated = True
                         st.session_state.user = user
+                        # Synchronise les champs plats utilises par le PDF/apercu
+                        # (page Parametres peut ensuite les personnaliser pour la session).
+                        st.session_state.agent_nom = user.get("nom_complet") or user.get("email", "Agent")
+                        st.session_state.institution = user.get("institution") or "Microfinance"
                         go_to("tableau_de_bord")
                     else:
                         st.error("Email ou mot de passe incorrect")
@@ -993,11 +1045,11 @@ def page_connexion():
 def page_register():
     """Crée un compte utilisateur avec register_user()."""
     st.markdown(
-        """
+        f"""
         <style>
-        .stApp { background: linear-gradient(160deg, #0f2b21 0%, #14243f 100%); }
-        [data-testid="collapsedControl"] { display: none; }
-        section[data-testid="stSidebar"] { display: none; }
+        .stApp {{ background: linear-gradient(160deg, {COULEUR_PRIMAIRE_SOMBRE} 0%, {COULEUR_PRIMAIRE} 100%); }}
+        [data-testid="collapsedControl"] {{ display: none; }}
+        section[data-testid="stSidebar"] {{ display: none; }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -1357,7 +1409,7 @@ def page_nouvelle_demande():
                 st.session_state.dernier_facteurs_model = facteurs_model
 
                 st.caption(
-                    "📊 La recommandation est basée sur le modèle CatBoost v2 entraîné sur l'historique "
+                    "📊 La recommandation est basée sur le modèle CatBoost entraîné sur l'historique "
                     "de remboursement. Elle prend en compte le score, le revenu mensuel et la durée du prêt."
                 )
     
@@ -1653,17 +1705,17 @@ def page_export_pdf():
             )
     
     st.markdown(
-        """
+        f"""
         <style>
-            .st-key-apercu_a4 {
+            .st-key-apercu_a4 {{
                 max-width: 794px;
                 margin: 0 auto 24px auto;
                 padding: 56px 64px !important;
-                box-shadow: 0 0 0 1px #e2e8f0, 0 12px 32px rgba(15, 23, 42, 0.10);
+                box-shadow: 0 0 0 1px {COULEUR_BORDURE}, 0 12px 32px rgba(15, 23, 42, 0.10);
                 border-radius: 3px;
-                background-color: #ecf0f1;
-                color: #1e293b;
-            }
+                background-color: #ffffff;
+                color: {COULEUR_TEXTE};
+            }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -1672,8 +1724,8 @@ def page_export_pdf():
     with st.container(border=True, key="apercu_a4"):
         st.markdown("<h3 style='text-align:center;'>RAPPORT D'ANALYSE — DEMANDE DE PRÊT</h3>", unsafe_allow_html=True)
         st.markdown(
-            f"<p style='text-align:center; color:#64748b;'>🏦 {st.session_state.institution} "
-            f"— Système de Scoring Crédit</p>",
+            f"<p style='text-align:center; color:#64748b;'>{st.session_state.institution} "
+            f"— {NOM_APP}</p>",
             unsafe_allow_html=True,
         )
         st.divider()
@@ -1729,7 +1781,7 @@ def page_export_pdf():
                 st.write(f"- **{nom}** ({valeur}) — {signe} le score de {abs(impact)} pt(s) · {explication}")
 
         st.divider()
-        st.caption("Généré par Système de Scoring Crédit Cameroun", text_alignment="center")
+        st.caption(f"Généré par {NOM_APP} — Scoring Crédit Cameroun", text_alignment="center")
 
 
 # =====================================================================
@@ -1837,7 +1889,7 @@ def page_parametres():
     st.divider()
     st.subheader("À propos")
     st.info(
-        "**Système de Scoring Crédit Cameroun V2.0**\n\n"
+        f"**{NOM_APP}** — Scoring Crédit Cameroun\n\n"
         "Modèle ML : CatBoost Classifier (16 features)\n\n"
         "Ce système utilise un modèle de machine learning entraîné sur l'historique de remboursement "
         "pour prédire le risque de crédit et recommander un montant maximum.\n\n"
