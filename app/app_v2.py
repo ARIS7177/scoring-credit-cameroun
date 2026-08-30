@@ -174,6 +174,13 @@ st.markdown(
         section[data-testid="stSidebar"] [data-testid="stAlert"] * {{
             color: {COULEUR_TEXTE} !important;
         }}
+        /* Texte des boutons du sidebar en vert (regle a forte specificite,
+           gagne sur le wildcard blanc ci-dessus quel que soit le testid
+           exact du bouton selon la version de Streamlit). */
+        section[data-testid="stSidebar"] button,
+        section[data-testid="stSidebar"] button * {{
+            color: {COULEUR_PRIMAIRE} !important;
+        }}
 
         /* --- Cartes/sections du contenu principal : blocs creme, coins et ombre coherents --- */
         div[data-testid="stVerticalBlockBorderWrapper"] {{
@@ -183,9 +190,39 @@ st.markdown(
             box-shadow: 0 1px 2px rgba(43, 43, 43, 0.04), 0 4px 14px rgba(43, 43, 43, 0.05);
         }}
 
+        /* --- Cartes du tableau de bord : liseré extérieur ambre uniquement
+               (le fond reste creme, pas de remplissage jaune) --- */
+        .st-key-card_metric_0 div[data-testid="stVerticalBlockBorderWrapper"],
+        .st-key-card_metric_1 div[data-testid="stVerticalBlockBorderWrapper"],
+        .st-key-card_metric_2 div[data-testid="stVerticalBlockBorderWrapper"],
+        .st-key-card_metric_3 div[data-testid="stVerticalBlockBorderWrapper"],
+        .st-key-card_action_rapide div[data-testid="stVerticalBlockBorderWrapper"],
+        .st-key-card_derniere_demande div[data-testid="stVerticalBlockBorderWrapper"],
+        .st-key-card_metric_0, .st-key-card_metric_1, .st-key-card_metric_2, .st-key-card_metric_3,
+        .st-key-card_action_rapide, .st-key-card_derniere_demande {{
+            border-color: {COULEUR_ACCENT} !important;
+            border-width: 2px !important;
+        }}
+
         /* --- Rayon coherent sur les boutons et badges --- */
         button[data-testid^="stBaseButton"] {{
             border-radius: 8px !important;
+        }}
+
+        /* --- Cadre complet des 5 sections en ambre, coins arrondis marques --- */
+        .st-key-exp_identite [data-testid="stExpander"],
+        .st-key-exp_capacite [data-testid="stExpander"],
+        .st-key-exp_credit [data-testid="stExpander"],
+        .st-key-exp_activite [data-testid="stExpander"],
+        .st-key-exp_leviers [data-testid="stExpander"],
+        .st-key-exp_identite details,
+        .st-key-exp_capacite details,
+        .st-key-exp_credit details,
+        .st-key-exp_activite details,
+        .st-key-exp_leviers details {{
+            border: 2px solid {COULEUR_ACCENT} !important;
+            border-radius: 12px !important;
+            overflow: hidden;
         }}
 
         /* --- En-tetes des 5 sections du formulaire "Nouvelle demande" en ambre
@@ -1285,9 +1322,9 @@ def page_tableau_de_bord():
             ("Refusées", nb_refusees, ICONE_CROIX, "#fee2e2", "#dc2626"),
             ("En étude", nb_etude, ICONE_HORLOGE, AMBRE_50, COULEUR_ACCENT_SOMBRE),
         ]
-        for col, (label, valeur, icone, fond_puce, couleur_icone) in zip(st.columns(4), metriques):
+        for i, (col, (label, valeur, icone, fond_puce, couleur_icone)) in enumerate(zip(st.columns(4), metriques)):
             with col:
-                with st.container(border=True):
+                with st.container(border=True, key=f"card_metric_{i}"):
                     st.markdown(
                         f'<div style="display:flex; align-items:center; gap:10px;">'
                         f'{render_chip(icone, fond_puce, couleur_icone)}'
@@ -1301,7 +1338,7 @@ def page_tableau_de_bord():
     col_gauche, col_droite = st.columns([2, 1])
     
     with col_gauche:
-        with st.container(border=True):
+        with st.container(border=True, key="card_action_rapide"):
             st.subheader("Action rapide")
             b1, b2 = st.columns(2)
             with b1:
@@ -1332,7 +1369,7 @@ def page_tableau_de_bord():
             )
     
     with col_droite:
-        with st.container(border=True):
+        with st.container(border=True, key="card_derniere_demande"):
             st.subheader("Dernière demande analysée")
             if df.empty:
                 st.caption("Aucune demande analysée pour l'instant.")
@@ -1988,8 +2025,19 @@ def page_historique():
         "score": "Score",
     })
     
+    def _couleur_decision(valeur):
+        # Meme code couleur que la jauge de score ailleurs dans l'app :
+        # vert = accorde (faible risque), orange = etude, rouge = refuse.
+        if valeur == "ACCORDÉ":
+            return "background-color: #dcfce7; color: #16a34a; font-weight: 600;"
+        if valeur == "ÉTUDE APPROFONDIE":
+            return "background-color: #fef3c7; color: #d97706; font-weight: 600;"
+        if valeur == "REFUSÉ":
+            return "background-color: #fee2e2; color: #dc2626; font-weight: 600;"
+        return ""
+
     st.dataframe(
-        historique_visible,
+        historique_visible.style.map(_couleur_decision, subset=["Décision"]),
         column_config={
             "Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY"),
             "Montant demandé": st.column_config.NumberColumn("Montant demandé", format="%d FCFA"),
