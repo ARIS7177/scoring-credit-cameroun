@@ -1063,12 +1063,13 @@ def render_entete(sous_titre="Un accès au crédit plus juste, une décision à 
     """Bandeau d'en-tête."""
     st.markdown(
         f"""
-        <div style="background-color:{COULEUR_FOND_SIDEBAR}; border-left:4px solid {COULEUR_ACCENT};
-                    padding:20px 26px; border-radius:8px; margin-bottom:20px;">
-            <span style="color:{COULEUR_PRIMAIRE}; font-size:2.1em; font-weight:700; line-height:1.1;">
+        <div style="text-align:center; padding:26px 16px 22px 16px; margin-bottom:22px;">
+            <span style="color:{COULEUR_PRIMAIRE}; font-size:2.6em; font-weight:700; line-height:1.1; letter-spacing:0.01em;">
                 {NOM_APP}
             </span><br>
-            <span style="color:{COULEUR_TEXTE}; opacity:0.8; font-size:1.05em;">{sous_titre}</span>
+            <span style="display:inline-block; width:52px; height:3px; background:{COULEUR_ACCENT};
+                         border-radius:2px; margin:10px 0 12px 0;"></span><br>
+            <span style="color:{COULEUR_TEXTE}; opacity:0.75; font-size:1.15em; font-weight:500;">{sous_titre}</span>
         </div>
         """,
         unsafe_allow_html=True,
