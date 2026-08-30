@@ -1059,16 +1059,16 @@ def render_sidebar():
             st.error("Modèle ML non disponible", icon=":material/error:")
 
 
-def render_entete(sous_titre="Évaluation du risque de défaut de crédit"):
+def render_entete(sous_titre="Un accès au crédit plus juste, une décision à la fois."):
     """Bandeau d'en-tête."""
     st.markdown(
         f"""
         <div style="background-color:{COULEUR_FOND_SIDEBAR}; border-left:4px solid {COULEUR_ACCENT};
-                    padding:14px 22px; border-radius:8px; margin-bottom:20px;">
-            <span style="color:{COULEUR_PRIMAIRE}; font-size:1.25em; font-weight:700;">
-                {NOM_APP} <span style="font-weight:400; opacity:0.75; color:{COULEUR_TEXTE};">— Scoring Crédit Cameroun</span>
+                    padding:20px 26px; border-radius:8px; margin-bottom:20px;">
+            <span style="color:{COULEUR_PRIMAIRE}; font-size:2.1em; font-weight:700; line-height:1.1;">
+                {NOM_APP}
             </span><br>
-            <span style="color:{COULEUR_TEXTE}; opacity:0.75; font-size:0.85em;">{sous_titre}</span>
+            <span style="color:{COULEUR_TEXTE}; opacity:0.8; font-size:1.05em;">{sous_titre}</span>
         </div>
         """,
         unsafe_allow_html=True,
