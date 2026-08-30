@@ -351,7 +351,7 @@ EXEMPLES = {
     "favorable": {
         "nom": "MANDENG", "prenom": "Francois", "adresse": "Bépanda, Douala",
         "genre": "Masculin", "age": "35-44", "education": "Supérieur",
-        "revenu": 250000, "charges": 150000, "ligne_credit": "Non", "usage_credit": "Professionnel",
+        "revenu": 250000, "charges": 150000, "ligne_credit": "Oui", "usage_credit": "Professionnel",
         "personnes_charge": 3, "logement": "Propriétaire", "anciennete": 36,
         "montant_demande": 2000000, "duree": 24, "objet": "Investissement (activité)",
         "secteur": "Salarié formel", "activite_saisonniere": "Non",
@@ -360,10 +360,10 @@ EXEMPLES = {
     "moyen": {
         "nom": "NGONO", "prenom": "Manie", "adresse": "Akwa, Douala",
         "genre": "Féminin", "age": "25-34", "education": "Secondaire",
-        "revenu": 150000, "charges": 800000, "ligne_credit": "Oui", "usage_credit": "Personnel",
+        "revenu": 150000, "charges": 60000, "ligne_credit": "Oui", "usage_credit": "Personnel",
         "personnes_charge": 2, "logement": "Locataire", "anciennete": 25,
-        "montant_demande": 800000, "duree": 18, "objet": "Trésorerie",
-        "secteur": "Commercant Indépendant", "activite_saisonniere": "Non",
+        "montant_demande": 800000, "duree": 18, "objet": "Investissement (activité)",
+        "secteur": "Activité saisonnière", "activite_saisonniere": "Oui",
         "mobile_money": "Oui", "membre_tontine": "Non", "garant": "Non",
     },
     "risque": {
