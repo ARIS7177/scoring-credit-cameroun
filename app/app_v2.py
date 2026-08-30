@@ -158,12 +158,20 @@ st.markdown(
             color: {COULEUR_TEXTE} !important;
         }}
 
-        /* --- Sidebar : vert sauge pale + accent ambre renforce --- */
+        /* --- Sidebar : vert plein + accent ambre --- */
         section[data-testid="stSidebar"] {{
-            background-color: {COULEUR_FOND_SIDEBAR} !important;
+            background-color: {COULEUR_PRIMAIRE} !important;
             border-right: 3px solid {COULEUR_ACCENT};
         }}
         section[data-testid="stSidebar"] * {{
+            color: #ffffff !important;
+        }}
+        /* Les boutons gardent leurs propres couleurs (regles plus specifiques
+           que le wildcard ci-dessus, donc non affectees) - texte non touche ici. */
+        /* st.success/st.error du sidebar ont un fond pastel clair (natif
+           Streamlit) - texte blanc y serait illisible, on le repasse fonce
+           uniquement a cet endroit. */
+        section[data-testid="stSidebar"] [data-testid="stAlert"] * {{
             color: {COULEUR_TEXTE} !important;
         }}
 
@@ -960,8 +968,12 @@ def render_sidebar():
             st.markdown(
                 f"""
                 <div style="display:flex; align-items:center; gap:10px; margin-bottom:2px;">
-                    <img src="data:image/svg+xml;base64,{LOGO_ICONE_B64}" width="32" height="32">
-                    <span style="font-size:1.4em; font-weight:700; color:{COULEUR_PRIMAIRE};">{NOM_APP}</span>
+                    <div style="background:#ffffff; border-radius:9px; padding:5px; width:32px; height:32px;
+                                box-sizing:border-box; display:flex; align-items:center; justify-content:center;
+                                box-shadow:0 1px 3px rgba(0,0,0,0.15);">
+                        <img src="data:image/svg+xml;base64,{LOGO_ICONE_B64}" width="22" height="22">
+                    </div>
+                    <span style="font-size:1.4em; font-weight:700; color:#ffffff;">{NOM_APP}</span>
                 </div>
                 """,
                 unsafe_allow_html=True,
