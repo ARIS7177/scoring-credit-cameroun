@@ -967,13 +967,13 @@ def render_sidebar():
         if LOGO_ICONE_B64:
             st.markdown(
                 f"""
-                <div style="display:flex; align-items:center; gap:10px; margin-bottom:2px;">
-                    <div style="background:#ffffff; border-radius:9px; padding:5px; width:32px; height:32px;
+                <div style="display:flex; align-items:center; gap:12px; margin-bottom:4px;">
+                    <div style="background:#ffffff; border-radius:14px; padding:8px; width:64px; height:64px;
                                 box-sizing:border-box; display:flex; align-items:center; justify-content:center;
-                                box-shadow:0 1px 3px rgba(0,0,0,0.15);">
-                        <img src="data:image/svg+xml;base64,{LOGO_ICONE_B64}" width="22" height="22">
+                                box-shadow:0 2px 6px rgba(0,0,0,0.18); flex-shrink:0;">
+                        <img src="data:image/svg+xml;base64,{LOGO_ICONE_B64}" width="46" height="46">
                     </div>
-                    <span style="font-size:1.4em; font-weight:700; color:#ffffff;">{NOM_APP}</span>
+                    <span style="font-size:1.9em; font-weight:700; color:#ffffff; line-height:1;">{NOM_APP}</span>
                 </div>
                 """,
                 unsafe_allow_html=True,
