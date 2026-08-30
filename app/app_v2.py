@@ -179,6 +179,29 @@ st.markdown(
         button[data-testid^="stBaseButton"] {{
             border-radius: 8px !important;
         }}
+
+        /* --- En-tetes des 5 sections du formulaire "Nouvelle demande" en ambre
+               (uniquement la barre de titre cliquable, pas les champs a l'interieur) --- */
+        .st-key-exp_identite summary,
+        .st-key-exp_capacite summary,
+        .st-key-exp_credit summary,
+        .st-key-exp_activite summary,
+        .st-key-exp_leviers summary,
+        .st-key-exp_identite [data-testid="stExpanderHeader"],
+        .st-key-exp_capacite [data-testid="stExpanderHeader"],
+        .st-key-exp_credit [data-testid="stExpanderHeader"],
+        .st-key-exp_activite [data-testid="stExpanderHeader"],
+        .st-key-exp_leviers [data-testid="stExpanderHeader"] {{
+            background-color: {COULEUR_ACCENT} !important;
+            border-radius: 8px;
+        }}
+        .st-key-exp_identite summary *, .st-key-exp_identite [data-testid="stExpanderHeader"] *,
+        .st-key-exp_capacite summary *, .st-key-exp_capacite [data-testid="stExpanderHeader"] *,
+        .st-key-exp_credit summary *, .st-key-exp_credit [data-testid="stExpanderHeader"] *,
+        .st-key-exp_activite summary *, .st-key-exp_activite [data-testid="stExpanderHeader"] *,
+        .st-key-exp_leviers summary *, .st-key-exp_leviers [data-testid="stExpanderHeader"] * {{
+            color: {COULEUR_TEXTE} !important;
+        }}
         .credora-badge {{
             display: inline-block;
             padding: 4px 14px;
@@ -1338,7 +1361,7 @@ def page_nouvelle_demande():
                 charger_exemple("risque")
     
     # --- SECTION 1 : IDENTITÉ ---
-    with st.expander("1. IDENTITÉ & PROFIL DEMANDEUR ", expanded=True):
+    with st.expander("1. IDENTITÉ & PROFIL DEMANDEUR ", expanded=True, key="exp_identite"):
         c1, c2 = st.columns(2)
         with c1:
             nom = st.text_input("Nom *", placeholder="Ex : MBARGA", key="f_nom")
@@ -1358,7 +1381,7 @@ def page_nouvelle_demande():
                               index=None, horizontal=True, key="f_education")
     
     # --- SECTION 2 : CAPACITÉ FINANCIÈRE ---
-    with st.expander("2. CAPACITÉ FINANCIÈRE ", expanded=True):
+    with st.expander("2. CAPACITÉ FINANCIÈRE ", expanded=True, key="exp_capacite"):
         revenu = st.number_input("Revenu mensuel déclaré (FCFA) *", min_value=15000, max_value=50000000,
                                   step=5000, key="f_revenu")
         
@@ -1386,7 +1409,7 @@ def page_nouvelle_demande():
                              index=None, horizontal=True, key="f_logement")
     
     # --- SECTION 3 : DEMANDE DE CRÉDIT ---
-    with st.expander("3. DEMANDE DE CRÉDIT", expanded=False):
+    with st.expander("3. DEMANDE DE CRÉDIT", expanded=False, key="exp_credit"):
         c1, c2 = st.columns(2)
         with c1:
             montant_demande = st.number_input("Montant demandé (FCFA) *", min_value=50000, max_value=500000000,
@@ -1396,7 +1419,7 @@ def page_nouvelle_demande():
             objet = st.selectbox("Objet du prêt", OPTIONS_OBJET, key="f_objet")
     
     # --- SECTION 4 : ACTIVITÉ PROFESSIONNELLE (+ PRÉDICTION ML EN TEMPS RÉEL) ---
-    with st.expander("4. ACTIVITÉ PROFESSIONNELLE — PRÉDICTION ML EN TEMPS RÉEL", expanded=True):
+    with st.expander("4. ACTIVITÉ PROFESSIONNELLE — PRÉDICTION ML EN TEMPS RÉEL", expanded=True, key="exp_activite"):
         c1, c2 = st.columns(2)
         with c1:
             secteur = st.selectbox("Secteur d'activité *", OPTIONS_SECTEUR,
@@ -1528,7 +1551,7 @@ def page_nouvelle_demande():
                 )
     
     # --- SECTION 5 : LEVIERS DE DÉCISION ---
-    with st.expander("5. LEVIERS DE DÉCISION", expanded=False):
+    with st.expander("5. LEVIERS DE DÉCISION", expanded=False, key="exp_leviers"):
         garant = st.radio("Garant / caution *", OPTIONS_GARANT, index=None, key="f_garant")
     
     # --- VALIDATION ---
