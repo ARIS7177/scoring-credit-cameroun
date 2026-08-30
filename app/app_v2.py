@@ -95,15 +95,35 @@ LOGO_ICONE_B64 = charger_logo_base64("credora-icon.svg")
 NOM_APP = "Credora"
 
 # --- Palette de marque (identité visuelle Credora, validée en equipe) ---
-# Distincte des couleurs de risque (vert/orange/rouge) utilisees ailleurs
-# pour le score - celles-la ne changent pas, ce sont des signaux metier.
-COULEUR_PRIMAIRE = "#1B5E3F"        # vert foret - institutionnel, confiance
-COULEUR_PRIMAIRE_SOMBRE = "#163f2c"  # variante hover/active
-COULEUR_ACCENT = "#E8A33D"          # ambre - chaleur, touche joyeuse
+# Theme clair et chaleureux ("tropical") : fond blanc/quasi-blanc partout,
+# le vert institutionnel et le corail en accents ponctuels seulement,
+# l'ambre/jaune (couleur du logo) comme couleur interactive principale
+# (boutons primaires, survol). Distincte des couleurs de risque
+# (vert/orange/rouge) utilisees ailleurs pour le score - celles-la ne
+# changent pas, ce sont des signaux metier.
+COULEUR_PRIMAIRE = "#1B5E3F"        # vert foret - accents institutionnels (logo, icones, nav active)
+COULEUR_PRIMAIRE_SOMBRE = "#163f2c"  # variante sombre du vert
+COULEUR_ACCENT = "#E8A33D"          # ambre/jaune - couleur interactive principale (boutons, survol)
+COULEUR_ACCENT_SOMBRE = "#C87F1F"   # ambre fonce - survol des boutons pleins
 COULEUR_ACCENT_2 = "#D96C4A"        # corail - accent secondaire
-COULEUR_FOND = "#FAF6EF"            # creme - plus chaleureux qu'un blanc pur
+COULEUR_FOND = "#EFF6F1"            # vert tres clair - fond de page (hors cartes), distinct des titres
+COULEUR_FOND_SIDEBAR = "#E3EFE6"    # vert sauge pale - sidebar (theme "Feuillage clair")
+COULEUR_BORDURE_SIDEBAR = "#D3E5D8"
+COULEUR_FOND_CARTE = "#FFFBF3"      # creme - cartes/sections du contenu principal
 COULEUR_TEXTE = "#2B2B2B"           # anthracite - plus doux qu'un noir pur
-COULEUR_BORDURE = "#E4DCC9"
+COULEUR_BORDURE = "#EDE3D0"
+
+# --- Palette tonale (derivee des 3 couleurs de marque, methode Material
+# Design : plusieurs nuances par couleur plutot que des teintes choisies
+# a la main une par une) - "50" = tres clair (fonds de puce/badge),
+# "700" = fonce (texte sur fond colore). Utilisee pour les pastilles
+# d'icones et badges de statut.
+VERT_50 = "#DDE7E2"
+VERT_700 = COULEUR_PRIMAIRE_SOMBRE
+AMBRE_50 = "#FBF1E2"
+AMBRE_700 = COULEUR_ACCENT_SOMBRE
+CORAIL_50 = "#F9E9E4"
+CORAIL_700 = "#A34E30"
 
 st.set_page_config(
     page_title=f"{NOM_APP} — Scoring Crédit Cameroun",
@@ -126,55 +146,99 @@ st.markdown(
         footer {{visibility: hidden;}}
         div[data-testid="stMetricValue"] {{ font-size: 1.6rem; }}
 
-        /* --- Sidebar : vert de marque --- */
-        section[data-testid="stSidebar"] {{
-            background-color: {COULEUR_PRIMAIRE} !important;
-        }}
-        section[data-testid="stSidebar"] * {{
-            color: #ffffff !important;
-            background-color: {COULEUR_PRIMAIRE} !important;
-        }}
-
-        /* --- Dashboard/Contenu principal --- */
-        .main {{
+        /* --- App et contenu principal : vert tres clair, distinct des titres --- */
+        .stApp {{
             background-color: {COULEUR_FOND} !important;
         }}
-        .main p, .main h1, .main h2, .main h3, .main h4, .main h5, .main h6,
+        .main h1 {{
+            color: {COULEUR_PRIMAIRE} !important;
+        }}
+        .main p, .main h2, .main h3, .main h4, .main h5, .main h6,
         .main span, .main label, .main div {{
             color: {COULEUR_TEXTE} !important;
         }}
 
-        /* --- Boutons : thème de marque --- */
-        button[data-testid="stBaseButton-secondary"] {{
-            color: {COULEUR_PRIMAIRE};
-            border: 1px solid {COULEUR_PRIMAIRE};
-            background-color: {COULEUR_FOND};
+        /* --- Sidebar : vert sauge pale + accent ambre renforce --- */
+        section[data-testid="stSidebar"] {{
+            background-color: {COULEUR_FOND_SIDEBAR} !important;
+            border-right: 3px solid {COULEUR_ACCENT};
         }}
-        button[data-testid="stBaseButton-secondary"]:hover {{
-            color: #ffffff;
-            border-color: {COULEUR_PRIMAIRE_SOMBRE};
-            background-color: {COULEUR_PRIMAIRE};
+        section[data-testid="stSidebar"] * {{
+            color: {COULEUR_TEXTE} !important;
+        }}
+
+        /* --- Cartes/sections du contenu principal : blocs creme, coins et ombre coherents --- */
+        div[data-testid="stVerticalBlockBorderWrapper"] {{
+            background-color: {COULEUR_FOND_CARTE};
+            border-color: {COULEUR_BORDURE} !important;
+            border-radius: 12px !important;
+            box-shadow: 0 1px 2px rgba(43, 43, 43, 0.04), 0 4px 14px rgba(43, 43, 43, 0.05);
+        }}
+
+        /* --- Rayon coherent sur les boutons et badges --- */
+        button[data-testid^="stBaseButton"] {{
+            border-radius: 8px !important;
+        }}
+        .credora-badge {{
+            display: inline-block;
+            padding: 4px 14px;
+            border-radius: 999px;
+            font-size: 0.85em;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }}
+        .credora-chip {{
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            font-size: 1.1em;
+            flex-shrink: 0;
+        }}
+
+        /* --- Boutons secondaires (la plupart des boutons) : blancs, jaunissent au survol --- */
+        button[data-testid="stBaseButton-secondary"],
+        button[data-testid="stBaseButtonSecondary"] {{
+            color: {COULEUR_PRIMAIRE} !important;
+            border: 1px solid {COULEUR_PRIMAIRE} !important;
+            background-color: {COULEUR_FOND} !important;
+            transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+        }}
+        button[data-testid="stBaseButton-secondary"]:hover,
+        button[data-testid="stBaseButtonSecondary"]:hover {{
+            color: {COULEUR_TEXTE} !important;
+            border-color: {COULEUR_ACCENT} !important;
+            background-color: {COULEUR_ACCENT} !important;
         }}
         button[data-testid="stBaseButton-secondary"]:disabled,
-        button[data-testid="stBaseButton-secondary"]:disabled:hover {{
-            color: #94a3b8;
-            border-color: #cbd5e1;
-            background-color: #f8fafc;
+        button[data-testid="stBaseButtonSecondary"]:disabled {{
+            color: #b0aca3 !important;
+            border-color: #e2ddd2 !important;
+            background-color: #faf8f3 !important;
         }}
-        button[data-testid="stBaseButton-primary"] {{
-            background-color: {COULEUR_PRIMAIRE};
-            border-color: {COULEUR_PRIMAIRE};
-            color: #ffffff;
+
+        /* --- Boutons primaires : jaune/ambre plein (couleur du logo) --- */
+        button[data-testid="stBaseButton-primary"],
+        button[data-testid="stBaseButtonPrimary"] {{
+            background-color: {COULEUR_ACCENT} !important;
+            border-color: {COULEUR_ACCENT} !important;
+            color: {COULEUR_TEXTE} !important;
+            font-weight: 600;
+            transition: background-color 0.15s ease, border-color 0.15s ease;
         }}
-        button[data-testid="stBaseButton-primary"]:hover {{
-            background-color: {COULEUR_PRIMAIRE_SOMBRE};
-            border-color: {COULEUR_PRIMAIRE_SOMBRE};
+        button[data-testid="stBaseButton-primary"]:hover,
+        button[data-testid="stBaseButtonPrimary"]:hover {{
+            background-color: {COULEUR_ACCENT_SOMBRE} !important;
+            border-color: {COULEUR_ACCENT_SOMBRE} !important;
+            color: #ffffff !important;
         }}
         button[data-testid="stBaseButton-primary"]:disabled,
-        button[data-testid="stBaseButton-primary"]:disabled:hover {{
-            background-color: #cbd5e1;
-            border-color: #cbd5e1;
-            color: #64748b;
+        button[data-testid="stBaseButtonPrimary"]:disabled {{
+            background-color: #f1ecdf !important;
+            border-color: #f1ecdf !important;
+            color: #b0aca3 !important;
         }}
     </style>
     """,
@@ -874,7 +938,7 @@ def render_sidebar():
                 f"""
                 <div style="display:flex; align-items:center; gap:10px; margin-bottom:2px;">
                     <img src="data:image/svg+xml;base64,{LOGO_ICONE_B64}" width="32" height="32">
-                    <span style="font-size:1.4em; font-weight:700; color:#ffffff;">{NOM_APP}</span>
+                    <span style="font-size:1.4em; font-weight:700; color:{COULEUR_PRIMAIRE};">{NOM_APP}</span>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -882,21 +946,26 @@ def render_sidebar():
         else:
             st.markdown(f"## {NOM_APP}")
         st.caption("Évaluer intelligemment le risque de crédit")
+        st.markdown(
+            f'<div style="height:3px; width:100%; background:{COULEUR_ACCENT}; '
+            f'border-radius:2px; margin:6px 0 12px 0;"></div>',
+            unsafe_allow_html=True,
+        )
 
         st.divider()
         pages_menu = [
-            ("Tableau de bord", "tableau_de_bord"),
-            ("Nouvelle demande", "nouvelle_demande"),
-            ("Historique", "historique"),
-            ("Paramètres", "parametres"),
+            ("Tableau de bord", "tableau_de_bord", ":material/space_dashboard:"),
+            ("Nouvelle demande", "nouvelle_demande", ":material/note_add:"),
+            ("Historique", "historique", ":material/history:"),
+            ("Paramètres", "parametres", ":material/settings:"),
         ]
-        for label, cle_page in pages_menu:
+        for label, cle_page, icone in pages_menu:
             type_bouton = "primary" if st.session_state.page == cle_page else "secondary"
-            if st.button(label, width="content", key=f"nav_{cle_page}", type=type_bouton):
+            if st.button(label, width="stretch", key=f"nav_{cle_page}", type=type_bouton, icon=icone):
                 go_to(cle_page)
-        
+
         st.divider()
-        if st.button("Déconnexion", width="stretch", key="nav_deconnexion"):
+        if st.button("Déconnexion", width="stretch", key="nav_deconnexion", icon=":material/logout:"):
             if st.session_state.get("user"):
                 logout_user(
                     st.session_state.user["id"],
@@ -905,28 +974,29 @@ def render_sidebar():
             st.session_state.authenticated = False
             st.session_state.user = None
             go_to("connexion")
-        
+
         st.divider()
         if st.session_state.user:
             st.caption(f"**Agent :** {st.session_state.user['nom_complet']}")
             st.caption(st.session_state.user.get('institution', 'Microfinance'))
-        
+
         st.divider()
         if MODEL:
-            st.success("Modèle ML chargé")
+            st.success("Modèle ML chargé", icon=":material/check_circle:")
         else:
-            st.error("❌ Modèle ML non disponible")
+            st.error("Modèle ML non disponible", icon=":material/error:")
 
 
 def render_entete(sous_titre="Évaluation du risque de défaut de crédit"):
     """Bandeau d'en-tête."""
     st.markdown(
         f"""
-        <div style="background-color:{COULEUR_PRIMAIRE}; padding:14px 22px; border-radius:8px; margin-bottom:20px;">
-            <span style="color:#ffffff; font-size:1.25em; font-weight:700;">
-                {NOM_APP} <span style="font-weight:400; opacity:0.85;">— Scoring Crédit Cameroun</span>
+        <div style="background-color:{COULEUR_FOND_SIDEBAR}; border-left:4px solid {COULEUR_ACCENT};
+                    padding:14px 22px; border-radius:8px; margin-bottom:20px;">
+            <span style="color:{COULEUR_PRIMAIRE}; font-size:1.25em; font-weight:700;">
+                {NOM_APP} <span style="font-weight:400; opacity:0.75; color:{COULEUR_TEXTE};">— Scoring Crédit Cameroun</span>
             </span><br>
-            <span style="color:#e5ded0; font-size:0.85em;">{sous_titre}</span>
+            <span style="color:{COULEUR_TEXTE}; opacity:0.75; font-size:0.85em;">{sous_titre}</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -942,7 +1012,7 @@ def render_jauge_score(score, couleur):
         gauge={
             "axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": "#94a3b8"},
             "bar": {"color": couleur, "thickness": 0.28},
-            "bgcolor": COULEUR_FOND,
+            "bgcolor": COULEUR_FOND_CARTE,
             "borderwidth": 0,
             "steps": [
                 {"range": [0, 40], "color": "#fee2e2"},
@@ -954,6 +1024,46 @@ def render_jauge_score(score, couleur):
     fig.update_layout(height=230, margin=dict(l=15, r=15, t=35, b=10))
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
+
+# Couleurs de statut (badges de decision) - distinctes de la palette de
+# marque, ce sont les memes signaux vert/orange/rouge deja utilises pour
+# le score ailleurs dans l'app, inchanges.
+COULEURS_STATUT = {
+    "ACCORDÉ": ("#16a34a", "#eafaf0"),
+    "ÉTUDE APPROFONDIE": ("#d97706", "#fef3c7"),
+    "REFUSÉ": ("#dc2626", "#fee2e2"),
+}
+
+
+def render_badge(texte, statut=None, couleur_fond=None, couleur_texte="#ffffff"):
+    """Pastille arrondie pleine (badge de statut), plus compacte et lisible
+    qu'une alerte st.success/warning/error en pleine largeur."""
+    if statut and statut in COULEURS_STATUT:
+        couleur_fond, _ = COULEURS_STATUT[statut]
+    st.markdown(
+        f'<span class="credora-badge" style="background:{couleur_fond}; color:{couleur_texte};">{texte}</span>',
+        unsafe_allow_html=True,
+    )
+
+
+def render_chip(icone_svg_path, couleur_fond, couleur_icone):
+    """Pastille circulaire coloree contenant une icone (mini-motif SVG
+    inspire du logo), pour les cartes de metriques."""
+    return (
+        f'<div class="credora-chip" style="background:{couleur_fond};">'
+        f'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{couleur_icone}" '
+        f'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{icone_svg_path}</svg>'
+        f'</div>'
+    )
+
+
+# Petits tracés d'icones (grille 24x24, style Material/Feather - traits
+# simples, pas d'emoji) reutilises pour les puces colorees du dashboard.
+ICONE_DEMANDES = '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>'
+ICONE_CHECK = '<path d="M20 6 9 17l-5-5"/>'
+ICONE_CROIX = '<path d="M18 6 6 18"/><path d="M6 6l12 12"/>'
+ICONE_HORLOGE = '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>'
+
 # =====================================================================
 # 6. PAGE 1 — CONNEXION
 # =====================================================================
@@ -962,7 +1072,7 @@ def page_connexion():
     st.markdown(
         f"""
         <style>
-        .stApp {{ background: linear-gradient(160deg, {COULEUR_PRIMAIRE_SOMBRE} 0%, {COULEUR_PRIMAIRE} 100%); }}
+        .stApp {{ background: linear-gradient(160deg, #ffffff 0%, {COULEUR_FOND_SIDEBAR} 55%, #fdecd2 100%); }}
         [data-testid="collapsedControl"] {{ display: none; }}
         section[data-testid="stSidebar"] {{ display: none; }}
         </style>
@@ -980,8 +1090,8 @@ def page_connexion():
             f"""
             <div style='text-align:center; margin-top:20px;'>
                 {logo_html}
-                <h1 style='color:#ffffff; margin:8px 0 0 0; font-weight:700;'>{NOM_APP}</h1>
-                <span style='color:#e5ded0;'>Cameroun — Scoring crédit avec modèle CatBoost intégré</span>
+                <h1 style='color:{COULEUR_PRIMAIRE}; margin:8px 0 0 0; font-weight:700;'>{NOM_APP}</h1>
+                <span style='color:{COULEUR_TEXTE}; opacity:0.75;'>Cameroun — Scoring crédit avec modèle CatBoost intégré</span>
             </div>
             """,
             unsafe_allow_html=True,
@@ -1033,7 +1143,7 @@ def page_connexion():
             )
         
         st.markdown(
-            "<p style='text-align:center; color:#c9d3e3; font-size:0.85em; margin-top:14px;'>"
+            f"<p style='text-align:center; color:{COULEUR_TEXTE}; opacity:0.6; font-size:0.85em; margin-top:14px;'>"
             "Connexion sécurisée</p>",
             unsafe_allow_html=True,
         )
@@ -1047,7 +1157,7 @@ def page_register():
     st.markdown(
         f"""
         <style>
-        .stApp {{ background: linear-gradient(160deg, {COULEUR_PRIMAIRE_SOMBRE} 0%, {COULEUR_PRIMAIRE} 100%); }}
+        .stApp {{ background: linear-gradient(160deg, #ffffff 0%, {COULEUR_FOND_SIDEBAR} 55%, #fdecd2 100%); }}
         [data-testid="collapsedControl"] {{ display: none; }}
         section[data-testid="stSidebar"] {{ display: none; }}
         </style>
@@ -1058,7 +1168,7 @@ def page_register():
     _, col_centre, _ = st.columns([1, 1.8, 1])
     with col_centre:
         st.markdown(
-            "<h2 style='text-align:center; color:white;'>Créer un compte</h2>",
+            f"<h2 style='text-align:center; color:{COULEUR_PRIMAIRE};'>Créer un compte</h2>",
             unsafe_allow_html=True,
         )
         with st.container(border=True):
@@ -1098,7 +1208,7 @@ def page_register():
                 go_to("connexion")
 
     st.markdown(
-        "<p style='text-align:center; color:#c9d3e3; font-size:0.85em; margin-top:14px;'>"
+        f"<p style='text-align:center; color:{COULEUR_TEXTE}; opacity:0.6; font-size:0.85em; margin-top:14px;'>"
         "Connexion sécurisée</p>",
         unsafe_allow_html=True,
     )
@@ -1134,19 +1244,23 @@ def page_tableau_de_bord():
         nb_refusees = int((du_jour["decision"] == "REFUSÉ").sum()) if "decision" in du_jour.columns else 0
         nb_etude = int((du_jour["decision"] == "ÉTUDE APPROFONDIE").sum()) if "decision" in du_jour.columns else 0
         
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            with st.container(border=True):
-                st.metric("Demandes", nb_total)
-        with c2:
-            with st.container(border=True):
-                st.metric("Accordées", nb_accordees)
-        with c3:
-            with st.container(border=True):
-                st.metric("Refusées", nb_refusees)
-        with c4:
-            with st.container(border=True):
-                st.metric("En étude", nb_etude)
+        metriques = [
+            ("Demandes", nb_total, ICONE_DEMANDES, VERT_50, COULEUR_PRIMAIRE),
+            ("Accordées", nb_accordees, ICONE_CHECK, "#eafaf0", "#16a34a"),
+            ("Refusées", nb_refusees, ICONE_CROIX, "#fee2e2", "#dc2626"),
+            ("En étude", nb_etude, ICONE_HORLOGE, AMBRE_50, COULEUR_ACCENT_SOMBRE),
+        ]
+        for col, (label, valeur, icone, fond_puce, couleur_icone) in zip(st.columns(4), metriques):
+            with col:
+                with st.container(border=True):
+                    st.markdown(
+                        f'<div style="display:flex; align-items:center; gap:10px;">'
+                        f'{render_chip(icone, fond_puce, couleur_icone)}'
+                        f'<div><div style="font-size:0.78em; color:{COULEUR_TEXTE}; opacity:0.65;">{label}</div>'
+                        f'<div style="font-size:1.5em; font-weight:700; color:{COULEUR_TEXTE};">{valeur}</div></div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
     
     st.write("")
     col_gauche, col_droite = st.columns([2, 1])
@@ -1185,12 +1299,15 @@ def page_tableau_de_bord():
     with col_droite:
         with st.container(border=True):
             st.subheader("Dernière demande analysée")
-            derniere = df.sort_values("date", ascending=False).iloc[0]
-            st.metric(f"ID {derniere['id']}", f"{derniere['score']}/100")
-            emoji = "✅" if derniere["statut"] == "Accordé" else ("⏳" if derniere["statut"] == "Étude approfondie" else "❌")
-            st.write(f"{emoji} **Décision : {derniere['statut'].upper()}**")
-            if st.button("Voir le détail →", width="stretch"):
-                go_to("historique")
+            if df.empty:
+                st.caption("Aucune demande analysée pour l'instant.")
+            else:
+                derniere = df.sort_values("date", ascending=False).iloc[0]
+                st.metric(f"ID {derniere['id']}", f"{derniere['score']}/100")
+                render_badge(derniere["statut"].upper(), statut=derniere["statut"].upper())
+                st.write("")
+                if st.button("Voir le détail →", width="stretch"):
+                    go_to("historique")
 
 
 # =====================================================================
@@ -1377,16 +1494,13 @@ def page_nouvelle_demande():
 
                     # Décision basée sur le score
                     if score_model >= 65:
-                        decision_ml = "✅ ACCORDÉ"
-                        decision_color = "green"
+                        decision_ml = "ACCORDÉ"
                     elif score_model >= 45:
-                        decision_ml = "⏳ ÉTUDE APPROFONDIE"
-                        decision_color = "orange"
+                        decision_ml = "ÉTUDE APPROFONDIE"
                     else:
-                        decision_ml = "❌ REFUSÉ"
-                        decision_color = "red"
+                        decision_ml = "REFUSÉ"
 
-                    st.markdown(f"<p style='color:{decision_color}; font-weight:bold;'>{decision_ml}</p>", unsafe_allow_html=True)
+                    render_badge(decision_ml, statut=decision_ml)
 
                 # Montant recommandé
                 st.divider()
@@ -1558,16 +1672,14 @@ def page_resultats():
     with col_decision:
         with st.container(border=True):
             if resultat["decision"] == "ACCORDÉ":
-                st.success(f"DÉCISION : {resultat['decision']}")
                 montant_disponible = montant_recommande
-
             elif resultat["decision"] == "ÉTUDE APPROFONDIE":
-                st.warning(f"DÉCISION : {resultat['decision']}")
                 montant_disponible = round(montant_recommande * 0.50 / 1000) * 1000
             else:
-                st.error(f"DÉCISION : {resultat['decision']}")
                 montant_disponible = 0
 
+            render_badge(f"DÉCISION : {resultat['decision']}", statut=resultat["decision"])
+            st.write("")
             st.caption(resultat["resume"])
 
             taux_indicatif = 18.5 if resultat["score"] >= 55 else 22.0
@@ -1794,7 +1906,23 @@ def page_historique():
     
     st.title("Historique des demandes")
     df = get_historique_demandes()
-    
+
+    if df.empty:
+        icone_b64 = charger_logo_base64("credora-icon.svg")
+        st.markdown(
+            f"""
+            <div style="text-align:center; padding:48px 20px; opacity:0.85;">
+                <img src="data:image/svg+xml;base64,{icone_b64}" width="72" height="72" style="opacity:0.35;"><br>
+                <p style="color:{COULEUR_TEXTE}; opacity:0.6; margin-top:14px; font-size:1.05em;">
+                    Aucune demande enregistrée pour l'instant.<br>
+                    L'historique se remplit automatiquement à chaque analyse.
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        return
+
     c1, c2, c3 = st.columns([2, 2, 1.3])
     with c1:
         decisions = sorted(df["decision"].dropna().unique().tolist())
