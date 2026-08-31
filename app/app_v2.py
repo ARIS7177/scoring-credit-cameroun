@@ -184,7 +184,7 @@ st.markdown(
 
         /* --- Cartes/sections du contenu principal : blocs creme, coins et ombre coherents --- */
         div[data-testid="stVerticalBlockBorderWrapper"] {{
-            background-color: {COULEUR_FOND_CARTE};
+            background-color: {COULEUR_FOND_CARTE} !important;
             border-color: {COULEUR_BORDURE} !important;
             border-radius: 12px !important;
             box-shadow: 0 1px 2px rgba(43, 43, 43, 0.04), 0 4px 14px rgba(43, 43, 43, 0.05);
