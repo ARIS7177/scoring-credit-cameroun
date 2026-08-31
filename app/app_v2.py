@@ -1148,6 +1148,9 @@ def page_connexion():
         .stApp {{ background: {COULEUR_ACCENT} !important; }}
         [data-testid="collapsedControl"] {{ display: none; }}
         section[data-testid="stSidebar"] {{ display: none; }}
+        .st-key-carte_connexion div[data-testid="stTextInputRootElement"] {{
+            border: 1.5px solid {COULEUR_ACCENT} !important;
+        }}
         </style>
         """,
         unsafe_allow_html=True,
