@@ -354,7 +354,7 @@ EXEMPLES = {
         "revenu": 250000, "charges": 150000, "ligne_credit": "Oui", "usage_credit": "Professionnel",
         "personnes_charge": 3, "logement": "Propriétaire", "anciennete": 36,
         "montant_demande": 2000000, "duree": 24, "objet": "Investissement (activité)",
-        "secteur": "Salarié formel", "activite_saisonniere": "Non",
+        "secteur": "Autre", "activite_saisonniere": "Non",
         "mobile_money": "Oui", "membre_tontine": "Oui", "garant": "Oui (logement en hypothèque)",
     },
     "moyen": {
