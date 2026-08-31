@@ -25,6 +25,24 @@
 # afin d'avoir une comparaison equitable. CatBoost devance XGBoost sur les 4
 # metriques (AUC-ROC test 0.805 vs 0.793) et avec une variance plus faible en
 # validation croisee (+/- 0.0036 vs +/- 0.0047) - retenu comme modele final.
+#
+# Etape 3 (30 aout 2026, semaine de marge) : exclusion de credit_ouvert des
+# features. En testant l'app deployee, les predictions se sont averees
+# quasi entierement dictees par ce seul champ (0,4% des lignes du dataset,
+# deja signale comme "rare" dans Classification_Variables_Consolidee.txt) :
+# a profil par ailleurs identique, faire varier credit_ouvert faisait passer
+# le score de 25 a 93/100, alors que le revenu, le montant demande ou la
+# duree n'avaient plus aucun effet mesurable. Verification sur les donnees
+# reelles : le taux de defaut observe ne varie que de ~8 points selon
+# credit_ouvert (16,8% vs 25,2% sur le sous-ensemble concerne), donc le
+# signal est reel mais le modele l'amplifiait environ 10x au-dela de ce que
+# les donnees justifient - signature typique d'un surapprentissage sur une
+# variable trop rare (deja pressenti par Andy le 30/07, qui proposait de
+# l'exclure). Reentraine sans cette feature (15 features au lieu de 16),
+# memes hyperparametres/seed/split : AUC-ROC test quasi identique
+# (0.8044 vs 0.8050), F1/Precision/Rappel legerement meilleurs. Retenu comme
+# nouveau modele final.
+#
 # Le modele CatBoost entraine ci-dessous (sur X_train, celui dont les
 # metriques sont rapportees dans le tableau comparatif) est sauvegarde avec
 # joblib, accompagne de la liste des features, pour reutilisation par l'app
@@ -57,8 +75,11 @@ print("Dimensions en entree :", df.shape)
 # Les colonnes descriptives (genre, tranche_age, niveau_education,
 # membre_tontine, activite_saisonniere, utilisation_mobile_money) et
 # id_client sont exclues des features ML (Classification_Variables_
-# Consolidee.txt, section 3.B) - seules les 16 colonnes de la categorie A
-# (section 3.A, apres encodage) entrent dans le modele.
+# Consolidee.txt, section 3.B). credit_ouvert est egalement exclue (voir
+# etape 3 ci-dessus) : presente sur seulement 0,4% des lignes, elle amenait
+# le modele a surapprendre un effet ~10x plus fort que ce que les donnees
+# reelles justifient. 15 des 16 colonnes de la categorie A (section 3.A,
+# apres encodage) entrent donc dans le modele.
 
 # %%
 CIBLE = "statut_remboursement"
@@ -70,6 +91,7 @@ COLONNES_NON_FEATURES = [
     "membre_tontine",
     "activite_saisonniere",
     "utilisation_mobile_money",
+    "credit_ouvert",
 ]
 
 FEATURES = [c for c in df.columns if c not in COLONNES_NON_FEATURES and c != CIBLE]

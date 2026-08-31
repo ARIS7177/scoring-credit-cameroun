@@ -360,10 +360,10 @@ EXEMPLES = {
     "moyen": {
         "nom": "NGONO", "prenom": "Manie", "adresse": "Akwa, Douala",
         "genre": "Féminin", "age": "25-34", "education": "Secondaire",
-        "revenu": 150000, "charges": 60000, "ligne_credit": "Oui", "usage_credit": "Personnel",
+        "revenu": 150000, "charges": 60000, "ligne_credit": "Non", "usage_credit": "Professionnel",
         "personnes_charge": 2, "logement": "Locataire", "anciennete": 25,
         "montant_demande": 800000, "duree": 18, "objet": "Investissement (activité)",
-        "secteur": "Activité saisonnière", "activite_saisonniere": "Oui",
+        "secteur": "Commerçant indépendant", "activite_saisonniere": "Non",
         "mobile_money": "Oui", "membre_tontine": "Non", "garant": "Non",
     },
     "risque": {
@@ -497,7 +497,12 @@ def construire_features_pour_modele(data):
     feature_dict = {}
     
     # --- Features numériques et booléennes ---
-    feature_dict['credit_ouvert'] = 1 if data.get('ligne_credit') == 'Oui' else 0
+    # Note : credit_ouvert (ligne de crédit déjà ouverte) n'est plus une
+    # feature du modèle depuis le 30/08/2026 (présente sur seulement 0,4%
+    # des dossiers d'entraînement, le modèle sur-apprenait un effet ~10x
+    # plus fort que ce que les données réelles justifient - cf.
+    # scripts/07_modelisation.py). Le champ reste dans le formulaire à
+    # titre informatif pour le dossier, mais n'influence plus le score.
     feature_dict['usage_professionnel'] = 1 if data.get('usage_credit') == 'Professionnel' else 0
     feature_dict['montant_pret_fcfa'] = data.get('montant_demande', 0)
     feature_dict['duree_mois'] = data.get('duree', 12)
@@ -571,13 +576,6 @@ def calculer_facteurs_shap(features, data):
             "Durée du prêt", f"{data['duree']} mois", round(imp),
             "Durée qui limite l'exposition au risque." if imp >= 0
             else "Durée longue qui augmente l'exposition au risque.",
-        ))
-
-        imp = impact("credit_ouvert")
-        facteurs.append((
-            "Ligne de crédit ouverte", data["ligne_credit"], round(imp),
-            "Aucune autre ligne de crédit en cours." if imp >= 0
-            else "Une autre ligne de crédit déjà ouverte augmente le risque.",
         ))
 
         imp = impact("usage_professionnel")
