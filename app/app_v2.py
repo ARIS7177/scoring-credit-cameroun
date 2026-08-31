@@ -182,8 +182,16 @@ st.markdown(
             color: {COULEUR_PRIMAIRE} !important;
         }}
 
-        /* --- Cartes/sections du contenu principal : blocs creme, coins et ombre coherents --- */
-        div[data-testid="stVerticalBlockBorderWrapper"] {{
+        /* --- Cartes/sections du contenu principal : blocs creme, coins et ombre coherents ---
+               Streamlit >=1.61 n'expose plus de wrapper dedie (stVerticalBlockBorderWrapper a
+               disparu du DOM) : chaque conteneur borde a etudier doit donc porter un key=
+               explicite, cible ici directement via la classe .st-key-<nom> que Streamlit lui
+               appose (verifie : cette classe est bien sur le div data-testid="stVerticalBlock"
+               qui porte deja la bordure native). --- */
+        .st-key-carte_connexion, .st-key-carte_register,
+        .st-key-carte_score, .st-key-carte_decision, .st-key-carte_facteurs, .st-key-carte_profil,
+        .st-key-card_metric_0, .st-key-card_metric_1, .st-key-card_metric_2, .st-key-card_metric_3,
+        .st-key-card_action_rapide, .st-key-card_derniere_demande {{
             background-color: {COULEUR_FOND_CARTE} !important;
             border-color: {COULEUR_BORDURE} !important;
             border-radius: 12px !important;
@@ -192,12 +200,6 @@ st.markdown(
 
         /* --- Cartes du tableau de bord : liseré extérieur ambre uniquement
                (le fond reste creme, pas de remplissage jaune) --- */
-        .st-key-card_metric_0 div[data-testid="stVerticalBlockBorderWrapper"],
-        .st-key-card_metric_1 div[data-testid="stVerticalBlockBorderWrapper"],
-        .st-key-card_metric_2 div[data-testid="stVerticalBlockBorderWrapper"],
-        .st-key-card_metric_3 div[data-testid="stVerticalBlockBorderWrapper"],
-        .st-key-card_action_rapide div[data-testid="stVerticalBlockBorderWrapper"],
-        .st-key-card_derniere_demande div[data-testid="stVerticalBlockBorderWrapper"],
         .st-key-card_metric_0, .st-key-card_metric_1, .st-key-card_metric_2, .st-key-card_metric_3,
         .st-key-card_action_rapide, .st-key-card_derniere_demande {{
             border-color: {COULEUR_ACCENT} !important;
@@ -1172,8 +1174,8 @@ def page_connexion():
             unsafe_allow_html=True,
         )
         st.write("")
-        
-        with st.container(border=True):
+
+        with st.container(border=True, key="carte_connexion"):
             st.markdown(
                 "<h3 style='text-align: center;'>Connexion agent</h3>",
                 unsafe_allow_html=True
@@ -1232,7 +1234,7 @@ def page_register():
     st.markdown(
         f"""
         <style>
-        .stApp {{ background: linear-gradient(160deg, #ffffff 0%, {COULEUR_FOND_SIDEBAR} 55%, #fdecd2 100%); }}
+        .stApp {{ background: linear-gradient(160deg, #ffffff 0%, {COULEUR_FOND_SIDEBAR} 55%, #fdecd2 100%) !important; }}
         [data-testid="collapsedControl"] {{ display: none; }}
         section[data-testid="stSidebar"] {{ display: none; }}
         </style>
@@ -1246,7 +1248,7 @@ def page_register():
             f"<h2 style='text-align:center; color:{COULEUR_PRIMAIRE};'>Créer un compte</h2>",
             unsafe_allow_html=True,
         )
-        with st.container(border=True):
+        with st.container(border=True, key="carte_register"):
             nom_complet = st.text_input("Nom complet *", placeholder="Ex : KOM Olivier")
             email = st.text_input("Email professionnel *", placeholder="exemple@imf.cm")
             institution = st.text_input("Institution *", value="Microfinance XYZ")
@@ -1739,13 +1741,13 @@ def page_resultats():
     col_score, col_decision = st.columns([1, 1.6])
     
     with col_score:
-        with st.container(border=True):
+        with st.container(border=True, key="carte_score"):
             st.markdown("**SCORE PRÉDIT**")
             render_jauge_score(resultat["score"], resultat["couleur"])
             st.caption(f"Probabilité de défaut : {resultat['proba_defaut']:.1f} %")
     
     with col_decision:
-        with st.container(border=True):
+        with st.container(border=True, key="carte_decision"):
             if resultat["decision"] == "ACCORDÉ":
                 montant_disponible = montant_recommande
             elif resultat["decision"] == "ÉTUDE APPROFONDIE":
@@ -1787,7 +1789,7 @@ def page_resultats():
         
         if resultat.get("facteurs"):
             st.write("")
-            with st.container(border=True):
+            with st.container(border=True, key="carte_facteurs"):
                 st.subheader("Facteurs influençants (SHAP)")
                 for i, (nom, valeur, impact, explication) in enumerate(resultat["facteurs"], 1):
                     fc1, fc2 = st.columns([3, 1])
@@ -1805,7 +1807,7 @@ def page_resultats():
                         st.divider()
     
     st.write("")
-    with st.container(border=True):
+    with st.container(border=True, key="carte_profil"):
         st.subheader("👤 Profil du demandeur")
         st.write(f"**{data['prenom']} {data['nom']}** · {data['adresse']}")
         c1, c2 = st.columns(2)
