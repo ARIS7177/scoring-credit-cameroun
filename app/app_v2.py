@@ -1143,7 +1143,7 @@ def page_connexion():
     st.markdown(
         f"""
         <style>
-        .stApp {{ background: linear-gradient(160deg, #ffffff 0%, {COULEUR_FOND_SIDEBAR} 55%, #fdecd2 100%); }}
+        .stApp {{ background: {COULEUR_ACCENT}; }}
         [data-testid="collapsedControl"] {{ display: none; }}
         section[data-testid="stSidebar"] {{ display: none; }}
         </style>
@@ -1154,14 +1154,18 @@ def page_connexion():
     _, col_centre, _ = st.columns([1, 1.8, 1])
     with col_centre:
         logo_html = (
-            f'<img src="data:image/svg+xml;base64,{LOGO_ICONE_B64}" width="56" height="56"><br>'
+            f"""<div style="background:#ffffff; border-radius:16px; padding:10px; width:72px; height:72px;
+                            box-sizing:border-box; display:flex; align-items:center; justify-content:center;
+                            box-shadow:0 2px 8px rgba(0,0,0,0.18); margin:0 auto;">
+                    <img src="data:image/svg+xml;base64,{LOGO_ICONE_B64}" width="52" height="52">
+                </div>"""
             if LOGO_ICONE_B64 else ""
         )
         st.markdown(
             f"""
             <div style='text-align:center; margin-top:20px;'>
                 {logo_html}
-                <h1 style='color:{COULEUR_PRIMAIRE}; margin:8px 0 0 0; font-weight:700;'>{NOM_APP}</h1>
+                <h1 style='color:{COULEUR_PRIMAIRE}; margin:12px 0 0 0; font-weight:700;'>{NOM_APP}</h1>
                 <span style='color:{COULEUR_TEXTE}; opacity:0.75;'>Cameroun — Scoring crédit avec modèle CatBoost intégré</span>
             </div>
             """,
