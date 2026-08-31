@@ -125,9 +125,11 @@ AMBRE_700 = COULEUR_ACCENT_SOMBRE
 CORAIL_50 = "#F9E9E4"
 CORAIL_700 = "#A34E30"
 
+_FAVICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "credora-icon.svg")
+
 st.set_page_config(
     page_title=f"{NOM_APP} — Scoring Crédit Cameroun",
-    page_icon="🌅",
+    page_icon=_FAVICON_PATH if os.path.exists(_FAVICON_PATH) else "🌅",
     layout="wide",
     initial_sidebar_state="expanded",
 )
