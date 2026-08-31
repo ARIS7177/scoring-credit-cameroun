@@ -1143,7 +1143,7 @@ def page_connexion():
     st.markdown(
         f"""
         <style>
-        .stApp {{ background: {COULEUR_ACCENT}; }}
+        .stApp {{ background: {COULEUR_ACCENT} !important; }}
         [data-testid="collapsedControl"] {{ display: none; }}
         section[data-testid="stSidebar"] {{ display: none; }}
         </style>
