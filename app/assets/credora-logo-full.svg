@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 120" width="360" height="120">
+  <!-- Credora - logo complet (icone + nom), Concept A valide -->
+  <g>
+    <path d="M 85.72 90.64 A 40 40 0 1 1 85.72 29.36" fill="none" stroke="#1B5E3F" stroke-width="11" stroke-linecap="round"/>
+    <line x1="92.9" y1="41" x2="108.5" y2="32" stroke="#E8A33D" stroke-width="6" stroke-linecap="round"/>
+    <line x1="98" y1="60" x2="118" y2="60" stroke="#E8A33D" stroke-width="7" stroke-linecap="round"/>
+    <line x1="92.9" y1="79" x2="108.5" y2="88" stroke="#E8A33D" stroke-width="6" stroke-linecap="round"/>
+  </g>
+  <text x="140" y="76" font-family="Poppins, 'Segoe UI', Arial, sans-serif" font-size="46" font-weight="700">
+    <tspan fill="#2B2B2B">Cred</tspan><tspan fill="#E8A33D">ora</tspan>
+  </text>
+</svg>

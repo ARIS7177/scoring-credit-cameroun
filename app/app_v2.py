@@ -1,8 +1,9 @@
 """
 =====================================================================
- SYSTÈME DE SCORING CRÉDIT CAMEROUN — Application Streamlit V2
+ CREDORA — Système de scoring crédit (Cameroun) — Application Streamlit
 =====================================================================
-
+Credora = Credit + Aurora : apporter de la clarté sur la décision de
+credit grace aux donnees et au scoring.
 """
 
 import streamlit as st
@@ -14,6 +15,7 @@ import joblib
 import os
 import sys
 import uuid
+import base64
 
 # Ajouter la racine du projet au chemin Python
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -65,6 +67,22 @@ MODEL = MODEL_DATA['modele'] if MODEL_DATA else None
 FEATURES_NAMES = MODEL_DATA['features'] if MODEL_DATA else []
 
 
+@st.cache_data
+def charger_logo_base64(nom_fichier):
+    """Charge un asset du logo (dossier app/assets/) et l'encode en base64
+    pour l'incorporer directement dans le HTML (pas de serveur de fichiers
+    statiques a configurer)."""
+    chemin = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", nom_fichier)
+    try:
+        with open(chemin, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    except FileNotFoundError:
+        return None
+
+
+LOGO_ICONE_B64 = charger_logo_base64("credora-icon.svg")
+
+
 # =====================================================================
 # 0.5 ACCÈS BASE DE DONNÉES
 # =====================================================================
@@ -74,77 +92,226 @@ FEATURES_NAMES = MODEL_DATA['features'] if MODEL_DATA else []
 # =====================================================================
 # 1. CONFIGURATION GÉNÉRALE DE LA PAGE
 # =====================================================================
+NOM_APP = "Credora"
+
+# --- Palette de marque (identité visuelle Credora, validée en equipe) ---
+# Theme clair et chaleureux ("tropical") : fond blanc/quasi-blanc partout,
+# le vert institutionnel et le corail en accents ponctuels seulement,
+# l'ambre/jaune (couleur du logo) comme couleur interactive principale
+# (boutons primaires, survol). Distincte des couleurs de risque
+# (vert/orange/rouge) utilisees ailleurs pour le score - celles-la ne
+# changent pas, ce sont des signaux metier.
+COULEUR_PRIMAIRE = "#1B5E3F"        # vert foret - accents institutionnels (logo, icones, nav active)
+COULEUR_PRIMAIRE_SOMBRE = "#163f2c"  # variante sombre du vert
+COULEUR_ACCENT = "#E8A33D"          # ambre/jaune - couleur interactive principale (boutons, survol)
+COULEUR_ACCENT_SOMBRE = "#C87F1F"   # ambre fonce - survol des boutons pleins
+COULEUR_ACCENT_2 = "#D96C4A"        # corail - accent secondaire
+COULEUR_FOND = "#EFF6F1"            # vert tres clair - fond de page (hors cartes), distinct des titres
+COULEUR_FOND_SIDEBAR = "#E3EFE6"    # vert sauge pale - sidebar (theme "Feuillage clair")
+COULEUR_BORDURE_SIDEBAR = "#D3E5D8"
+COULEUR_FOND_CARTE = "#FFFBF3"      # creme - cartes/sections du contenu principal
+COULEUR_TEXTE = "#2B2B2B"           # anthracite - plus doux qu'un noir pur
+COULEUR_BORDURE = "#EDE3D0"
+
+# --- Palette tonale (derivee des 3 couleurs de marque, methode Material
+# Design : plusieurs nuances par couleur plutot que des teintes choisies
+# a la main une par une) - "50" = tres clair (fonds de puce/badge),
+# "700" = fonce (texte sur fond colore). Utilisee pour les pastilles
+# d'icones et badges de statut.
+VERT_50 = "#DDE7E2"
+VERT_700 = COULEUR_PRIMAIRE_SOMBRE
+AMBRE_50 = "#FBF1E2"
+AMBRE_700 = COULEUR_ACCENT_SOMBRE
+CORAIL_50 = "#F9E9E4"
+CORAIL_700 = "#A34E30"
+
+_FAVICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "credora-icon.svg")
+
 st.set_page_config(
-    page_title="Système de Scoring Crédit Cameroun",
-    page_icon="🏦",
+    page_title=f"{NOM_APP} — Scoring Crédit Cameroun",
+    page_icon=_FAVICON_PATH if os.path.exists(_FAVICON_PATH) else "🌅",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 # --- CSS commun à toute l'application ---
 st.markdown(
-    """
+    f"""
     <style>
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
-        div[data-testid="stMetricValue"] { font-size: 1.6rem; }
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
 
-        /* --- Sidebar en vert --- */
-        section[data-testid="stSidebar"] {
-            background-color: #1f9d55 !important;
-        }
-        
-        /* --- Textes blancs dans le sidebar --- */
-        section[data-testid="stSidebar"] {
-            color: white !important;
-            background-color: #1f9d55 !important;
-        }
-        section[data-testid="stSidebar"] * {
-            color: white !important;
-            background-color: #178449 !important;
-        }
-        
-        /* --- Dashboard/Contenu principal --- */
-        .main {
-            background-color: #ffffff !important;
-        }
-        .main p, .main h1, .main h2, .main h3, .main h4, .main h5, .main h6,
-        .main span, .main label, .main div {
-            color: #000000 !important;
-        }
+        html, body, [class*="css"] {{
+            font-family: 'Poppins', 'Segoe UI', system-ui, sans-serif;
+        }}
 
-        /* --- Boutons : thème vert cohérent --- */
-        button[data-testid="stBaseButton-secondary"] {
-            color: #1f9d55;
-            border: 1px solid #1f9d55;
-            background-color: #ffffff;
-        }
-        button[data-testid="stBaseButton-secondary"]:hover {
-            color: #ffffff;
-            border-color: #178449;
-            background-color: #1f9d55;
-        }
+        #MainMenu {{visibility: hidden;}}
+        footer {{visibility: hidden;}}
+        div[data-testid="stMetricValue"] {{ font-size: 1.6rem; }}
+
+        /* --- App et contenu principal : vert tres clair, distinct des titres --- */
+        .stApp {{
+            background-color: {COULEUR_FOND} !important;
+        }}
+        .main h1 {{
+            color: {COULEUR_PRIMAIRE} !important;
+        }}
+        .main p, .main h2, .main h3, .main h4, .main h5, .main h6,
+        .main span, .main label, .main div {{
+            color: {COULEUR_TEXTE} !important;
+        }}
+
+        /* --- Sidebar : vert plein + accent ambre --- */
+        section[data-testid="stSidebar"] {{
+            background-color: {COULEUR_PRIMAIRE} !important;
+            border-right: 3px solid {COULEUR_ACCENT};
+        }}
+        section[data-testid="stSidebar"] * {{
+            color: #ffffff !important;
+        }}
+        /* Les boutons gardent leurs propres couleurs (regles plus specifiques
+           que le wildcard ci-dessus, donc non affectees) - texte non touche ici. */
+        /* st.success/st.error du sidebar ont un fond pastel clair (natif
+           Streamlit) - texte blanc y serait illisible, on le repasse fonce
+           uniquement a cet endroit. */
+        section[data-testid="stSidebar"] [data-testid="stAlert"] * {{
+            color: {COULEUR_TEXTE} !important;
+        }}
+        /* Texte des boutons du sidebar en vert (regle a forte specificite,
+           gagne sur le wildcard blanc ci-dessus quel que soit le testid
+           exact du bouton selon la version de Streamlit). */
+        section[data-testid="stSidebar"] button,
+        section[data-testid="stSidebar"] button * {{
+            color: {COULEUR_PRIMAIRE} !important;
+        }}
+
+        /* --- Cartes/sections du contenu principal : blocs creme, coins et ombre coherents ---
+               Streamlit >=1.61 n'expose plus de wrapper dedie (stVerticalBlockBorderWrapper a
+               disparu du DOM) : chaque conteneur borde a etudier doit donc porter un key=
+               explicite, cible ici directement via la classe .st-key-<nom> que Streamlit lui
+               appose (verifie : cette classe est bien sur le div data-testid="stVerticalBlock"
+               qui porte deja la bordure native). --- */
+        .st-key-carte_connexion, .st-key-carte_register,
+        .st-key-carte_score, .st-key-carte_decision, .st-key-carte_facteurs, .st-key-carte_profil,
+        .st-key-card_metric_0, .st-key-card_metric_1, .st-key-card_metric_2, .st-key-card_metric_3,
+        .st-key-card_action_rapide, .st-key-card_derniere_demande {{
+            background-color: {COULEUR_FOND_CARTE} !important;
+            border-color: {COULEUR_BORDURE} !important;
+            border-radius: 12px !important;
+            box-shadow: 0 1px 2px rgba(43, 43, 43, 0.04), 0 4px 14px rgba(43, 43, 43, 0.05);
+        }}
+
+        /* --- Cartes du tableau de bord : liseré extérieur ambre uniquement
+               (le fond reste creme, pas de remplissage jaune) --- */
+        .st-key-card_metric_0, .st-key-card_metric_1, .st-key-card_metric_2, .st-key-card_metric_3,
+        .st-key-card_action_rapide, .st-key-card_derniere_demande {{
+            border-color: {COULEUR_ACCENT} !important;
+            border-width: 2px !important;
+        }}
+
+        /* --- Rayon coherent sur les boutons et badges --- */
+        button[data-testid^="stBaseButton"] {{
+            border-radius: 8px !important;
+        }}
+
+        /* --- Cadre complet des 5 sections en ambre, coins arrondis marques --- */
+        .st-key-exp_identite [data-testid="stExpander"],
+        .st-key-exp_capacite [data-testid="stExpander"],
+        .st-key-exp_credit [data-testid="stExpander"],
+        .st-key-exp_activite [data-testid="stExpander"],
+        .st-key-exp_leviers [data-testid="stExpander"],
+        .st-key-exp_identite details,
+        .st-key-exp_capacite details,
+        .st-key-exp_credit details,
+        .st-key-exp_activite details,
+        .st-key-exp_leviers details {{
+            border: 2px solid {COULEUR_ACCENT} !important;
+            border-radius: 12px !important;
+            overflow: hidden;
+        }}
+
+        /* --- En-tetes des 5 sections du formulaire "Nouvelle demande" en ambre
+               (uniquement la barre de titre cliquable, pas les champs a l'interieur) --- */
+        .st-key-exp_identite summary,
+        .st-key-exp_capacite summary,
+        .st-key-exp_credit summary,
+        .st-key-exp_activite summary,
+        .st-key-exp_leviers summary,
+        .st-key-exp_identite [data-testid="stExpanderHeader"],
+        .st-key-exp_capacite [data-testid="stExpanderHeader"],
+        .st-key-exp_credit [data-testid="stExpanderHeader"],
+        .st-key-exp_activite [data-testid="stExpanderHeader"],
+        .st-key-exp_leviers [data-testid="stExpanderHeader"] {{
+            background-color: {COULEUR_ACCENT} !important;
+            border-radius: 8px;
+        }}
+        .st-key-exp_identite summary *, .st-key-exp_identite [data-testid="stExpanderHeader"] *,
+        .st-key-exp_capacite summary *, .st-key-exp_capacite [data-testid="stExpanderHeader"] *,
+        .st-key-exp_credit summary *, .st-key-exp_credit [data-testid="stExpanderHeader"] *,
+        .st-key-exp_activite summary *, .st-key-exp_activite [data-testid="stExpanderHeader"] *,
+        .st-key-exp_leviers summary *, .st-key-exp_leviers [data-testid="stExpanderHeader"] * {{
+            color: {COULEUR_TEXTE} !important;
+        }}
+        .credora-badge {{
+            display: inline-block;
+            padding: 4px 14px;
+            border-radius: 999px;
+            font-size: 0.85em;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }}
+        .credora-chip {{
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            font-size: 1.1em;
+            flex-shrink: 0;
+        }}
+
+        /* --- Boutons secondaires (la plupart des boutons) : blancs, jaunissent au survol --- */
+        button[data-testid="stBaseButton-secondary"],
+        button[data-testid="stBaseButtonSecondary"] {{
+            color: {COULEUR_PRIMAIRE} !important;
+            border: 1px solid {COULEUR_PRIMAIRE} !important;
+            background-color: {COULEUR_FOND} !important;
+            transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+        }}
+        button[data-testid="stBaseButton-secondary"]:hover,
+        button[data-testid="stBaseButtonSecondary"]:hover {{
+            color: {COULEUR_TEXTE} !important;
+            border-color: {COULEUR_ACCENT} !important;
+            background-color: {COULEUR_ACCENT} !important;
+        }}
         button[data-testid="stBaseButton-secondary"]:disabled,
-        button[data-testid="stBaseButton-secondary"]:disabled:hover {
-            color: #94a3b8;
-            border-color: #cbd5e1;
-            background-color: #f8fafc;
-        }
-        button[data-testid="stBaseButton-primary"] {
-            background-color: #1f9d55;
-            border-color: #1f9d55;
-            color: #ffffff;
-        }
-        button[data-testid="stBaseButton-primary"]:hover {
-            background-color: #178449;
-            border-color: #178449;
-        }
+        button[data-testid="stBaseButtonSecondary"]:disabled {{
+            color: #b0aca3 !important;
+            border-color: #e2ddd2 !important;
+            background-color: #faf8f3 !important;
+        }}
+
+        /* --- Boutons primaires : jaune/ambre plein (couleur du logo) --- */
+        button[data-testid="stBaseButton-primary"],
+        button[data-testid="stBaseButtonPrimary"] {{
+            background-color: {COULEUR_ACCENT} !important;
+            border-color: {COULEUR_ACCENT} !important;
+            color: {COULEUR_TEXTE} !important;
+            font-weight: 600;
+            transition: background-color 0.15s ease, border-color 0.15s ease;
+        }}
+        button[data-testid="stBaseButton-primary"]:hover,
+        button[data-testid="stBaseButtonPrimary"]:hover {{
+            background-color: {COULEUR_ACCENT_SOMBRE} !important;
+            border-color: {COULEUR_ACCENT_SOMBRE} !important;
+            color: #ffffff !important;
+        }}
         button[data-testid="stBaseButton-primary"]:disabled,
-        button[data-testid="stBaseButton-primary"]:disabled:hover {
-            background-color: #cbd5e1;
-            border-color: #cbd5e1;
-            color: #64748b;
-        }
+        button[data-testid="stBaseButtonPrimary"]:disabled {{
+            background-color: #f1ecdf !important;
+            border-color: #f1ecdf !important;
+            color: #b0aca3 !important;
+        }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -188,19 +355,19 @@ EXEMPLES = {
     "favorable": {
         "nom": "MANDENG", "prenom": "Francois", "adresse": "Bépanda, Douala",
         "genre": "Masculin", "age": "35-44", "education": "Supérieur",
-        "revenu": 250000, "charges": 150000, "ligne_credit": "Non", "usage_credit": "Professionnel",
+        "revenu": 250000, "charges": 150000, "ligne_credit": "Oui", "usage_credit": "Professionnel",
         "personnes_charge": 3, "logement": "Propriétaire", "anciennete": 36,
         "montant_demande": 2000000, "duree": 24, "objet": "Investissement (activité)",
-        "secteur": "Salarié formel", "activite_saisonniere": "Non",
+        "secteur": "Autre", "activite_saisonniere": "Non",
         "mobile_money": "Oui", "membre_tontine": "Oui", "garant": "Oui (logement en hypothèque)",
     },
     "moyen": {
         "nom": "NGONO", "prenom": "Manie", "adresse": "Akwa, Douala",
         "genre": "Féminin", "age": "25-34", "education": "Secondaire",
-        "revenu": 150000, "charges": 800000, "ligne_credit": "Oui", "usage_credit": "Personnel",
+        "revenu": 150000, "charges": 60000, "ligne_credit": "Non", "usage_credit": "Professionnel",
         "personnes_charge": 2, "logement": "Locataire", "anciennete": 25,
-        "montant_demande": 800000, "duree": 18, "objet": "Trésorerie",
-        "secteur": "Commercant Indépendant", "activite_saisonniere": "Non",
+        "montant_demande": 800000, "duree": 18, "objet": "Investissement (activité)",
+        "secteur": "Commerçant indépendant", "activite_saisonniere": "Non",
         "mobile_money": "Oui", "membre_tontine": "Non", "garant": "Non",
     },
     "risque": {
@@ -334,7 +501,12 @@ def construire_features_pour_modele(data):
     feature_dict = {}
     
     # --- Features numériques et booléennes ---
-    feature_dict['credit_ouvert'] = 1 if data.get('ligne_credit') == 'Oui' else 0
+    # Note : credit_ouvert (ligne de crédit déjà ouverte) n'est plus une
+    # feature du modèle depuis le 30/08/2026 (présente sur seulement 0,4%
+    # des dossiers d'entraînement, le modèle sur-apprenait un effet ~10x
+    # plus fort que ce que les données réelles justifient - cf.
+    # scripts/07_modelisation.py). Le champ reste dans le formulaire à
+    # titre informatif pour le dossier, mais n'influence plus le score.
     feature_dict['usage_professionnel'] = 1 if data.get('usage_credit') == 'Professionnel' else 0
     feature_dict['montant_pret_fcfa'] = data.get('montant_demande', 0)
     feature_dict['duree_mois'] = data.get('duree', 12)
@@ -410,13 +582,6 @@ def calculer_facteurs_shap(features, data):
             else "Durée longue qui augmente l'exposition au risque.",
         ))
 
-        imp = impact("credit_ouvert")
-        facteurs.append((
-            "Ligne de crédit ouverte", data["ligne_credit"], round(imp),
-            "Aucune autre ligne de crédit en cours." if imp >= 0
-            else "Une autre ligne de crédit déjà ouverte augmente le risque.",
-        ))
-
         imp = impact("usage_professionnel")
         facteurs.append((
             "Usage du crédit", data["usage_credit"], round(imp),
@@ -444,6 +609,43 @@ def calculer_facteurs_shap(features, data):
 
     except Exception:
         return []
+
+
+def generer_resume_decision(decision, facteurs, prenom):
+    """
+    Genere une synthese courte (1-2 phrases), en langage clair et sans
+    jargon technique, expliquant la decision a partir de la capacite de
+    remboursement du demandeur. Reutilise les explications deja
+    redigees dans `facteurs` (calculer_facteurs_shap ou
+    evaluer_demande_heuristique), en ne retenant que celles qui vont
+    dans le sens de la decision - pas la liste complete des 5 facteurs
+    deja affichee par ailleurs, juste l'essentiel pour un agent presse.
+    """
+    prenom = prenom or "Le demandeur"
+
+    if decision == "ACCORDÉ":
+        intro = (
+            f"{prenom} présente une situation financière qui permet d'envisager "
+            f"sereinement le remboursement de ce crédit dans les délais prévus."
+        )
+        pertinents = [f for f in facteurs if f[2] >= 0]
+    elif decision == "REFUSÉ":
+        intro = (
+            f"La situation actuelle de {prenom} ne permet pas d'assurer ce "
+            f"remboursement dans de bonnes conditions."
+        )
+        pertinents = [f for f in facteurs if f[2] < 0]
+    else:
+        intro = (
+            f"La capacité de {prenom} à assumer ce remboursement reste incertaine "
+            f"et mérite un examen complémentaire."
+        )
+        pertinents = list(facteurs)
+
+    pertinents = sorted(pertinents, key=lambda f: abs(f[2]), reverse=True)[:2]
+    raisons = " ".join(f[3] for f in pertinents)
+
+    return f"{intro} {raisons}".strip()
 
 
 def predire_score_ml(data):
@@ -705,7 +907,7 @@ def generer_pdf(data, resultat, montant_disponible, taux, mensualite, score_mode
     pdf.cell(0, 10, texte("RAPPORT D'ANALYSE - DEMANDE DE PRET"), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
     pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 6, texte(f"{st.session_state.institution} - Systeme de Scoring Credit"),
+    pdf.cell(0, 6, texte(f"{st.session_state.institution} - {NOM_APP}"),
              new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
     pdf.set_text_color(0, 0, 0)
     pdf.ln(2)
@@ -756,6 +958,11 @@ def generer_pdf(data, resultat, montant_disponible, taux, mensualite, score_mode
                   "Ratio d'endettement", f"{data['ratio_endettement']:.0f} %")
     pdf.ln(3)
 
+    if resultat.get("resume"):
+        pdf.set_font("Helvetica", "I", 9.5)
+        pdf.multi_cell(0, 4.6, texte(resultat["resume"]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.ln(2)
+
     if resultat.get("facteurs"):
         titre_section("FACTEURS EXPLICATIFS DU SCORE")
         for nom, valeur, impact, explication in resultat["facteurs"]:
@@ -785,7 +992,7 @@ def generer_pdf(data, resultat, montant_disponible, taux, mensualite, score_mode
     pdf.ln(3)
     pdf.set_font("Helvetica", "I", 8)
     pdf.set_text_color(150, 150, 150)
-    pdf.cell(0, 6, texte("Généré par Système de Scoring Credit Cameroun"), align="C")
+    pdf.cell(0, 6, texte(f"Généré par {NOM_APP} — Scoring Crédit Cameroun"), align="C")
     
     return bytes(pdf.output())
 
@@ -796,22 +1003,43 @@ def generer_pdf(data, resultat, montant_disponible, taux, mensualite, score_mode
 def render_sidebar():
     """Menu latéral."""
     with st.sidebar:
-        st.markdown("## Évaluer intelligemment le risque de crédit ")
-        
+        if LOGO_ICONE_B64:
+            st.markdown(
+                f"""
+                <div style="display:flex; align-items:center; gap:12px; margin-bottom:4px;">
+                    <div style="background:#ffffff; border-radius:14px; padding:8px; width:64px; height:64px;
+                                box-sizing:border-box; display:flex; align-items:center; justify-content:center;
+                                box-shadow:0 2px 6px rgba(0,0,0,0.18); flex-shrink:0;">
+                        <img src="data:image/svg+xml;base64,{LOGO_ICONE_B64}" width="46" height="46">
+                    </div>
+                    <span style="font-size:1.9em; font-weight:700; color:#ffffff; line-height:1;">{NOM_APP}</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(f"## {NOM_APP}")
+        st.caption("Évaluer intelligemment le risque de crédit")
+        st.markdown(
+            f'<div style="height:3px; width:100%; background:{COULEUR_ACCENT}; '
+            f'border-radius:2px; margin:6px 0 12px 0;"></div>',
+            unsafe_allow_html=True,
+        )
+
         st.divider()
         pages_menu = [
-            ("Tableau de bord", "tableau_de_bord"),
-            ("Nouvelle demande", "nouvelle_demande"),
-            ("Historique", "historique"),
-            ("Paramètres", "parametres"),
+            ("Tableau de bord", "tableau_de_bord", ":material/space_dashboard:"),
+            ("Nouvelle demande", "nouvelle_demande", ":material/note_add:"),
+            ("Historique", "historique", ":material/history:"),
+            ("Paramètres", "parametres", ":material/settings:"),
         ]
-        for label, cle_page in pages_menu:
+        for label, cle_page, icone in pages_menu:
             type_bouton = "primary" if st.session_state.page == cle_page else "secondary"
-            if st.button(label, width="content", key=f"nav_{cle_page}", type=type_bouton):
+            if st.button(label, width="stretch", key=f"nav_{cle_page}", type=type_bouton, icon=icone):
                 go_to(cle_page)
-        
+
         st.divider()
-        if st.button("Déconnexion", width="stretch", key="nav_deconnexion"):
+        if st.button("Déconnexion", width="stretch", key="nav_deconnexion", icon=":material/logout:"):
             if st.session_state.get("user"):
                 logout_user(
                     st.session_state.user["id"],
@@ -820,28 +1048,30 @@ def render_sidebar():
             st.session_state.authenticated = False
             st.session_state.user = None
             go_to("connexion")
-        
+
         st.divider()
         if st.session_state.user:
             st.caption(f"**Agent :** {st.session_state.user['nom_complet']}")
             st.caption(st.session_state.user.get('institution', 'Microfinance'))
-        
+
         st.divider()
         if MODEL:
-            st.success("Modèle ML chargé")
+            st.success("Modèle ML chargé", icon=":material/check_circle:")
         else:
-            st.error("❌ Modèle ML non disponible")
+            st.error("Modèle ML non disponible", icon=":material/error:")
 
 
-def render_entete(sous_titre="Évaluation du risque de defaut de crédit"):
+def render_entete(sous_titre="Un accès au crédit plus juste, une décision à la fois."):
     """Bandeau d'en-tête."""
     st.markdown(
         f"""
-        <div style="background-color:#16233f; padding:14px 22px; border-radius:8px; margin-bottom:20px;">
-            <span style="color:white; font-size:1.25em; font-weight:700;">
-                SYSTÈME DE SCORING CRÉDIT CAMEROUN
+        <div style="text-align:center; padding:26px 16px 22px 16px; margin-bottom:22px;">
+            <span style="color:{COULEUR_PRIMAIRE}; font-size:2.6em; font-weight:700; line-height:1.1; letter-spacing:0.01em;">
+                {NOM_APP}
             </span><br>
-            <span style="color:#c9d3e3; font-size:0.85em;">{sous_titre}</span>
+            <span style="display:inline-block; width:52px; height:3px; background:{COULEUR_ACCENT};
+                         border-radius:2px; margin:10px 0 12px 0;"></span><br>
+            <span style="color:{COULEUR_TEXTE}; opacity:0.75; font-size:1.15em; font-weight:500;">{sous_titre}</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -857,7 +1087,7 @@ def render_jauge_score(score, couleur):
         gauge={
             "axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": "#94a3b8"},
             "bar": {"color": couleur, "thickness": 0.28},
-            "bgcolor": "white",
+            "bgcolor": COULEUR_FOND_CARTE,
             "borderwidth": 0,
             "steps": [
                 {"range": [0, 40], "color": "#fee2e2"},
@@ -869,36 +1099,88 @@ def render_jauge_score(score, couleur):
     fig.update_layout(height=230, margin=dict(l=15, r=15, t=35, b=10))
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
+
+# Couleurs de statut (badges de decision) - distinctes de la palette de
+# marque, ce sont les memes signaux vert/orange/rouge deja utilises pour
+# le score ailleurs dans l'app, inchanges.
+COULEURS_STATUT = {
+    "ACCORDÉ": ("#16a34a", "#eafaf0"),
+    "ÉTUDE APPROFONDIE": ("#d97706", "#fef3c7"),
+    "REFUSÉ": ("#dc2626", "#fee2e2"),
+}
+
+
+def render_badge(texte, statut=None, couleur_fond=None, couleur_texte="#ffffff"):
+    """Pastille arrondie pleine (badge de statut), plus compacte et lisible
+    qu'une alerte st.success/warning/error en pleine largeur."""
+    if statut and statut in COULEURS_STATUT:
+        couleur_fond, _ = COULEURS_STATUT[statut]
+    st.markdown(
+        f'<span class="credora-badge" style="background:{couleur_fond}; color:{couleur_texte};">{texte}</span>',
+        unsafe_allow_html=True,
+    )
+
+
+def render_chip(icone_svg_path, couleur_fond, couleur_icone):
+    """Pastille circulaire coloree contenant une icone (mini-motif SVG
+    inspire du logo), pour les cartes de metriques."""
+    return (
+        f'<div class="credora-chip" style="background:{couleur_fond};">'
+        f'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{couleur_icone}" '
+        f'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{icone_svg_path}</svg>'
+        f'</div>'
+    )
+
+
+# Petits tracés d'icones (grille 24x24, style Material/Feather - traits
+# simples, pas d'emoji) reutilises pour les puces colorees du dashboard.
+ICONE_DEMANDES = '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>'
+ICONE_CHECK = '<path d="M20 6 9 17l-5-5"/>'
+ICONE_CROIX = '<path d="M18 6 6 18"/><path d="M6 6l12 12"/>'
+ICONE_HORLOGE = '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>'
+
 # =====================================================================
 # 6. PAGE 1 — CONNEXION
 # =====================================================================
 def page_connexion():
     """Écran de connexion."""
     st.markdown(
-        """
+        f"""
         <style>
-        .stApp { background: linear-gradient(160deg, #0f2b21 0%, #14243f 100%); }
-        [data-testid="collapsedControl"] { display: none; }
-        section[data-testid="stSidebar"] { display: none; }
+        .stApp {{ background: {COULEUR_ACCENT} !important; }}
+        [data-testid="collapsedControl"] {{ display: none; }}
+        section[data-testid="stSidebar"] {{ display: none; }}
+        .st-key-carte_connexion div[data-testid="stTextInputRootElement"] {{
+            border: 1.5px solid {COULEUR_ACCENT} !important;
+        }}
         </style>
         """,
         unsafe_allow_html=True,
     )
-    
+
     _, col_centre, _ = st.columns([1, 1.8, 1])
     with col_centre:
+        logo_html = (
+            f"""<div style="background:#ffffff; border-radius:16px; padding:10px; width:72px; height:72px;
+                            box-sizing:border-box; display:flex; align-items:center; justify-content:center;
+                            box-shadow:0 2px 8px rgba(0,0,0,0.18); margin:0 auto;">
+                    <img src="data:image/svg+xml;base64,{LOGO_ICONE_B64}" width="52" height="52">
+                </div>"""
+            if LOGO_ICONE_B64 else ""
+        )
         st.markdown(
-            """
+            f"""
             <div style='text-align:center; margin-top:20px;'>
-                <h2 style='color:white; margin-bottom:0;'>SYSTÈME DE SCORING CRÉDIT</h2>
-                <span style='color:#c9d3e3;'>Cameroun — Modèle Catboost intégré</span>
+                {logo_html}
+                <h1 style='color:{COULEUR_PRIMAIRE}; margin:12px 0 0 0; font-weight:700;'>{NOM_APP}</h1>
+                <span style='color:{COULEUR_TEXTE}; opacity:0.75;'>Cameroun — Scoring crédit avec modèle CatBoost intégré</span>
             </div>
             """,
             unsafe_allow_html=True,
         )
         st.write("")
-        
-        with st.container(border=True):
+
+        with st.container(border=True, key="carte_connexion"):
             st.markdown(
                 "<h3 style='text-align: center;'>Connexion agent</h3>",
                 unsafe_allow_html=True
@@ -919,6 +1201,10 @@ def page_connexion():
                     if user:
                         st.session_state.authenticated = True
                         st.session_state.user = user
+                        # Synchronise les champs plats utilises par le PDF/apercu
+                        # (page Parametres peut ensuite les personnaliser pour la session).
+                        st.session_state.agent_nom = user.get("nom_complet") or user.get("email", "Agent")
+                        st.session_state.institution = user.get("institution") or "Microfinance"
                         go_to("tableau_de_bord")
                     else:
                         st.error("Email ou mot de passe incorrect")
@@ -939,7 +1225,7 @@ def page_connexion():
             )
         
         st.markdown(
-            "<p style='text-align:center; color:#c9d3e3; font-size:0.85em; margin-top:14px;'>"
+            f"<p style='text-align:center; color:{COULEUR_TEXTE}; opacity:0.6; font-size:0.85em; margin-top:14px;'>"
             "Connexion sécurisée</p>",
             unsafe_allow_html=True,
         )
@@ -951,11 +1237,11 @@ def page_connexion():
 def page_register():
     """Crée un compte utilisateur avec register_user()."""
     st.markdown(
-        """
+        f"""
         <style>
-        .stApp { background: linear-gradient(160deg, #0f2b21 0%, #14243f 100%); }
-        [data-testid="collapsedControl"] { display: none; }
-        section[data-testid="stSidebar"] { display: none; }
+        .stApp {{ background: linear-gradient(160deg, #ffffff 0%, {COULEUR_FOND_SIDEBAR} 55%, #fdecd2 100%) !important; }}
+        [data-testid="collapsedControl"] {{ display: none; }}
+        section[data-testid="stSidebar"] {{ display: none; }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -964,10 +1250,10 @@ def page_register():
     _, col_centre, _ = st.columns([1, 1.8, 1])
     with col_centre:
         st.markdown(
-            "<h2 style='text-align:center; color:white;'>Créer un compte</h2>",
+            f"<h2 style='text-align:center; color:{COULEUR_PRIMAIRE};'>Créer un compte</h2>",
             unsafe_allow_html=True,
         )
-        with st.container(border=True):
+        with st.container(border=True, key="carte_register"):
             nom_complet = st.text_input("Nom complet *", placeholder="Ex : KOM Olivier")
             email = st.text_input("Email professionnel *", placeholder="exemple@imf.cm")
             institution = st.text_input("Institution *", value="Microfinance XYZ")
@@ -1004,7 +1290,7 @@ def page_register():
                 go_to("connexion")
 
     st.markdown(
-        "<p style='text-align:center; color:#c9d3e3; font-size:0.85em; margin-top:14px;'>"
+        f"<p style='text-align:center; color:{COULEUR_TEXTE}; opacity:0.6; font-size:0.85em; margin-top:14px;'>"
         "Connexion sécurisée</p>",
         unsafe_allow_html=True,
     )
@@ -1040,25 +1326,29 @@ def page_tableau_de_bord():
         nb_refusees = int((du_jour["decision"] == "REFUSÉ").sum()) if "decision" in du_jour.columns else 0
         nb_etude = int((du_jour["decision"] == "ÉTUDE APPROFONDIE").sum()) if "decision" in du_jour.columns else 0
         
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            with st.container(border=True):
-                st.metric("Demandes", nb_total)
-        with c2:
-            with st.container(border=True):
-                st.metric("Accordées", nb_accordees)
-        with c3:
-            with st.container(border=True):
-                st.metric("Refusées", nb_refusees)
-        with c4:
-            with st.container(border=True):
-                st.metric("En étude", nb_etude)
+        metriques = [
+            ("Demandes", nb_total, ICONE_DEMANDES, VERT_50, COULEUR_PRIMAIRE),
+            ("Accordées", nb_accordees, ICONE_CHECK, "#eafaf0", "#16a34a"),
+            ("Refusées", nb_refusees, ICONE_CROIX, "#fee2e2", "#dc2626"),
+            ("En étude", nb_etude, ICONE_HORLOGE, AMBRE_50, COULEUR_ACCENT_SOMBRE),
+        ]
+        for i, (col, (label, valeur, icone, fond_puce, couleur_icone)) in enumerate(zip(st.columns(4), metriques)):
+            with col:
+                with st.container(border=True, key=f"card_metric_{i}"):
+                    st.markdown(
+                        f'<div style="display:flex; align-items:center; gap:10px;">'
+                        f'{render_chip(icone, fond_puce, couleur_icone)}'
+                        f'<div><div style="font-size:0.78em; color:{COULEUR_TEXTE}; opacity:0.65;">{label}</div>'
+                        f'<div style="font-size:1.5em; font-weight:700; color:{COULEUR_TEXTE};">{valeur}</div></div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
     
     st.write("")
     col_gauche, col_droite = st.columns([2, 1])
     
     with col_gauche:
-        with st.container(border=True):
+        with st.container(border=True, key="card_action_rapide"):
             st.subheader("Action rapide")
             b1, b2 = st.columns(2)
             with b1:
@@ -1089,14 +1379,17 @@ def page_tableau_de_bord():
             )
     
     with col_droite:
-        with st.container(border=True):
+        with st.container(border=True, key="card_derniere_demande"):
             st.subheader("Dernière demande analysée")
-            derniere = df.sort_values("date", ascending=False).iloc[0]
-            st.metric(f"ID {derniere['id']}", f"{derniere['score']}/100")
-            emoji = "✅" if derniere["statut"] == "Accordé" else ("⏳" if derniere["statut"] == "Étude approfondie" else "❌")
-            st.write(f"{emoji} **Décision : {derniere['statut'].upper()}**")
-            if st.button("Voir le détail →", width="stretch"):
-                go_to("historique")
+            if df.empty:
+                st.caption("Aucune demande analysée pour l'instant.")
+            else:
+                derniere = df.sort_values("date", ascending=False).iloc[0]
+                st.metric(f"ID {derniere['id']}", f"{derniere['score']}/100")
+                render_badge(derniere["statut"].upper(), statut=derniere["statut"].upper())
+                st.write("")
+                if st.button("Voir le détail →", width="stretch"):
+                    go_to("historique")
 
 
 # =====================================================================
@@ -1127,7 +1420,7 @@ def page_nouvelle_demande():
                 charger_exemple("risque")
     
     # --- SECTION 1 : IDENTITÉ ---
-    with st.expander("1. IDENTITÉ & PROFIL DEMANDEUR ", expanded=True):
+    with st.expander("1. IDENTITÉ & PROFIL DEMANDEUR ", expanded=True, key="exp_identite"):
         c1, c2 = st.columns(2)
         with c1:
             nom = st.text_input("Nom *", placeholder="Ex : MBARGA", key="f_nom")
@@ -1147,7 +1440,7 @@ def page_nouvelle_demande():
                               index=None, horizontal=True, key="f_education")
     
     # --- SECTION 2 : CAPACITÉ FINANCIÈRE ---
-    with st.expander("2. CAPACITÉ FINANCIÈRE ", expanded=True):
+    with st.expander("2. CAPACITÉ FINANCIÈRE ", expanded=True, key="exp_capacite"):
         revenu = st.number_input("Revenu mensuel déclaré (FCFA) *", min_value=15000, max_value=50000000,
                                   step=5000, key="f_revenu")
         
@@ -1175,7 +1468,7 @@ def page_nouvelle_demande():
                              index=None, horizontal=True, key="f_logement")
     
     # --- SECTION 3 : DEMANDE DE CRÉDIT ---
-    with st.expander("3. DEMANDE DE CRÉDIT", expanded=False):
+    with st.expander("3. DEMANDE DE CRÉDIT", expanded=False, key="exp_credit"):
         c1, c2 = st.columns(2)
         with c1:
             montant_demande = st.number_input("Montant demandé (FCFA) *", min_value=50000, max_value=500000000,
@@ -1185,7 +1478,7 @@ def page_nouvelle_demande():
             objet = st.selectbox("Objet du prêt", OPTIONS_OBJET, key="f_objet")
     
     # --- SECTION 4 : ACTIVITÉ PROFESSIONNELLE (+ PRÉDICTION ML EN TEMPS RÉEL) ---
-    with st.expander("4. ACTIVITÉ PROFESSIONNELLE — PRÉDICTION ML EN TEMPS RÉEL", expanded=True):
+    with st.expander("4. ACTIVITÉ PROFESSIONNELLE — PRÉDICTION ML EN TEMPS RÉEL", expanded=True, key="exp_activite"):
         c1, c2 = st.columns(2)
         with c1:
             secteur = st.selectbox("Secteur d'activité *", OPTIONS_SECTEUR,
@@ -1283,16 +1576,13 @@ def page_nouvelle_demande():
 
                     # Décision basée sur le score
                     if score_model >= 65:
-                        decision_ml = "✅ ACCORDÉ"
-                        decision_color = "green"
+                        decision_ml = "ACCORDÉ"
                     elif score_model >= 45:
-                        decision_ml = "⏳ ÉTUDE APPROFONDIE"
-                        decision_color = "orange"
+                        decision_ml = "ÉTUDE APPROFONDIE"
                     else:
-                        decision_ml = "❌ REFUSÉ"
-                        decision_color = "red"
+                        decision_ml = "REFUSÉ"
 
-                    st.markdown(f"<p style='color:{decision_color}; font-weight:bold;'>{decision_ml}</p>", unsafe_allow_html=True)
+                    render_badge(decision_ml, statut=decision_ml)
 
                 # Montant recommandé
                 st.divider()
@@ -1315,12 +1605,12 @@ def page_nouvelle_demande():
                 st.session_state.dernier_facteurs_model = facteurs_model
 
                 st.caption(
-                    "📊 La recommandation est basée sur le modèle CatBoost v2 entraîné sur l'historique "
+                    "📊 La recommandation est basée sur le modèle CatBoost entraîné sur l'historique "
                     "de remboursement. Elle prend en compte le score, le revenu mensuel et la durée du prêt."
                 )
     
     # --- SECTION 5 : LEVIERS DE DÉCISION ---
-    with st.expander("5. LEVIERS DE DÉCISION", expanded=False):
+    with st.expander("5. LEVIERS DE DÉCISION", expanded=False, key="exp_leviers"):
         garant = st.radio("Garant / caution *", OPTIONS_GARANT, index=None, key="f_garant")
     
     # --- VALIDATION ---
@@ -1445,31 +1735,35 @@ def page_resultats():
         resultat = evaluer_demande_heuristique(data)
         montant_recommande = st.session_state.demande_data.get("montant_demande", 0)
         score_source = "📊 Système heuristique"
-    
+
+    resultat["resume"] = generer_resume_decision(
+        resultat["decision"], resultat.get("facteurs") or [], data.get("prenom")
+    )
+
     st.title("Résultat de l'analyse")
     st.caption(f"ID : {data['id']} · Source : {score_source} · Statut : OK")
     
     col_score, col_decision = st.columns([1, 1.6])
     
     with col_score:
-        with st.container(border=True):
+        with st.container(border=True, key="carte_score"):
             st.markdown("**SCORE PRÉDIT**")
             render_jauge_score(resultat["score"], resultat["couleur"])
             st.caption(f"Probabilité de défaut : {resultat['proba_defaut']:.1f} %")
     
     with col_decision:
-        with st.container(border=True):
+        with st.container(border=True, key="carte_decision"):
             if resultat["decision"] == "ACCORDÉ":
-                st.success(f"DÉCISION : {resultat['decision']}")
                 montant_disponible = montant_recommande
-
             elif resultat["decision"] == "ÉTUDE APPROFONDIE":
-                st.warning(f"DÉCISION : {resultat['decision']}")
                 montant_disponible = round(montant_recommande * 0.50 / 1000) * 1000
             else:
-                st.error(f"DÉCISION : {resultat['decision']}")
                 montant_disponible = 0
-            
+
+            render_badge(f"DÉCISION : {resultat['decision']}", statut=resultat["decision"])
+            st.write("")
+            st.caption(resultat["resume"])
+
             taux_indicatif = 18.5 if resultat["score"] >= 55 else 22.0
 
             # ACCORDÉ      → montant demandé
@@ -1500,7 +1794,7 @@ def page_resultats():
         
         if resultat.get("facteurs"):
             st.write("")
-            with st.container(border=True):
+            with st.container(border=True, key="carte_facteurs"):
                 st.subheader("Facteurs influençants (SHAP)")
                 for i, (nom, valeur, impact, explication) in enumerate(resultat["facteurs"], 1):
                     fc1, fc2 = st.columns([3, 1])
@@ -1518,7 +1812,7 @@ def page_resultats():
                         st.divider()
     
     st.write("")
-    with st.container(border=True):
+    with st.container(border=True, key="carte_profil"):
         st.subheader("👤 Profil du demandeur")
         st.write(f"**{data['prenom']} {data['nom']}** · {data['adresse']}")
         c1, c2 = st.columns(2)
@@ -1605,17 +1899,17 @@ def page_export_pdf():
             )
     
     st.markdown(
-        """
+        f"""
         <style>
-            .st-key-apercu_a4 {
+            .st-key-apercu_a4 {{
                 max-width: 794px;
                 margin: 0 auto 24px auto;
                 padding: 56px 64px !important;
-                box-shadow: 0 0 0 1px #e2e8f0, 0 12px 32px rgba(15, 23, 42, 0.10);
+                box-shadow: 0 0 0 1px {COULEUR_BORDURE}, 0 12px 32px rgba(15, 23, 42, 0.10);
                 border-radius: 3px;
-                background-color: #ecf0f1;
-                color: #1e293b;
-            }
+                background-color: #ffffff;
+                color: {COULEUR_TEXTE};
+            }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -1624,8 +1918,8 @@ def page_export_pdf():
     with st.container(border=True, key="apercu_a4"):
         st.markdown("<h3 style='text-align:center;'>RAPPORT D'ANALYSE — DEMANDE DE PRÊT</h3>", unsafe_allow_html=True)
         st.markdown(
-            f"<p style='text-align:center; color:#64748b;'>🏦 {st.session_state.institution} "
-            f"— Système de Scoring Crédit</p>",
+            f"<p style='text-align:center; color:#64748b;'>{st.session_state.institution} "
+            f"— {NOM_APP}</p>",
             unsafe_allow_html=True,
         )
         st.divider()
@@ -1670,6 +1964,9 @@ def page_export_pdf():
         with c3:
             st.metric("Décision", resultat["decision"])
 
+        if resultat.get("resume"):
+            st.caption(resultat["resume"])
+
         if resultat.get("facteurs"):
             st.divider()
             st.markdown("**🔍 FACTEURS EXPLICATIFS DU SCORE**")
@@ -1678,7 +1975,7 @@ def page_export_pdf():
                 st.write(f"- **{nom}** ({valeur}) — {signe} le score de {abs(impact)} pt(s) · {explication}")
 
         st.divider()
-        st.caption("Généré par Système de Scoring Crédit Cameroun", text_alignment="center")
+        st.caption(f"Généré par {NOM_APP} — Scoring Crédit Cameroun", text_alignment="center")
 
 
 # =====================================================================
@@ -1691,7 +1988,23 @@ def page_historique():
     
     st.title("Historique des demandes")
     df = get_historique_demandes()
-    
+
+    if df.empty:
+        icone_b64 = charger_logo_base64("credora-icon.svg")
+        st.markdown(
+            f"""
+            <div style="text-align:center; padding:48px 20px; opacity:0.85;">
+                <img src="data:image/svg+xml;base64,{icone_b64}" width="72" height="72" style="opacity:0.35;"><br>
+                <p style="color:{COULEUR_TEXTE}; opacity:0.6; margin-top:14px; font-size:1.05em;">
+                    Aucune demande enregistrée pour l'instant.<br>
+                    L'historique se remplit automatiquement à chaque analyse.
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        return
+
     c1, c2, c3 = st.columns([2, 2, 1.3])
     with c1:
         decisions = sorted(df["decision"].dropna().unique().tolist())
@@ -1722,8 +2035,19 @@ def page_historique():
         "score": "Score",
     })
     
+    def _couleur_decision(valeur):
+        # Meme code couleur que la jauge de score ailleurs dans l'app :
+        # vert = accorde (faible risque), orange = etude, rouge = refuse.
+        if valeur == "ACCORDÉ":
+            return "background-color: #dcfce7; color: #16a34a; font-weight: 600;"
+        if valeur == "ÉTUDE APPROFONDIE":
+            return "background-color: #fef3c7; color: #d97706; font-weight: 600;"
+        if valeur == "REFUSÉ":
+            return "background-color: #fee2e2; color: #dc2626; font-weight: 600;"
+        return ""
+
     st.dataframe(
-        historique_visible,
+        historique_visible.style.map(_couleur_decision, subset=["Décision"]),
         column_config={
             "Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY"),
             "Montant demandé": st.column_config.NumberColumn("Montant demandé", format="%d FCFA"),
@@ -1786,7 +2110,7 @@ def page_parametres():
     st.divider()
     st.subheader("À propos")
     st.info(
-        "**Système de Scoring Crédit Cameroun V2.0**\n\n"
+        f"**{NOM_APP}** — Scoring Crédit Cameroun\n\n"
         "Modèle ML : CatBoost Classifier (16 features)\n\n"
         "Ce système utilise un modèle de machine learning entraîné sur l'historique de remboursement "
         "pour prédire le risque de crédit et recommander un montant maximum.\n\n"

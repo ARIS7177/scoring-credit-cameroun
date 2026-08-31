@@ -1,0 +1,13 @@
+# Force le theme clair Credora, independamment des preferences sombres
+# du systeme/navigateur de l'utilisateur. Sans ce fichier, Streamlit
+# suit le mode sombre du systeme par defaut, ce qui donnait un fond
+# noir meme apres connexion (surcharges CSS via st.markdown seules
+# insuffisantes, cibles pas toujours a jour avec les versions recentes
+# de Streamlit).
+[theme]
+base = "light"
+primaryColor = "#E8A33D"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#FFFBF3"
+textColor = "#2B2B2B"
+font = "sans serif"

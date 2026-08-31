@@ -213,7 +213,7 @@ def register_user(email: str, password: str, nom_complet: str,
                 INSERT INTO public.agents (id, user_id, code_agent)
                 VALUES (%s, %s, %s)
             """
-            code_agent = f"AGT-{user_id.hex[:8].upper()}"
+            code_agent = f"AGT-{str(user_id).replace('-', '')[:8].upper()}"
             execute_query(agent_query, (user_id, user_id, code_agent))
         
         return True, "Utilisateur créé avec succès"
