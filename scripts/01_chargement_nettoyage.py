@@ -70,6 +70,21 @@ print("\nValeurs manquantes par colonne (top 15) :")
 print(df.isna().sum().sort_values(ascending=False).head(15))
 
 # %% [markdown]
+# ### Valeurs manquantes deguisees
+# 1260 lignes ont income == 0 (jamais negatif). Un revenu mensuel exactement nul
+# pour un demandeur de credit n'est pas plausible : c'est tres probablement un
+# encodage de valeur manquante par 0 plutot qu'un NaN explicite.
+# On le convertit en NaN pour que l'imputation de la Semaine 2 (mediane) le
+# traite comme les 9150 valeurs deja manquantes, plutot que de laisser un "0
+# FCFA de revenu mensuel" une fois la mise a l'echelle camerounaise appliquee
+# (risque de division par zero dans les ratios derives, ex. ratio_endettement).
+
+# %%
+n_income_zero = (df["income"] == 0).sum()
+print(f"Lignes avec income == 0 (traitees comme manquantes) : {n_income_zero}")
+df.loc[df["income"] == 0, "income"] = pd.NA
+
+# %% [markdown]
 # ### Doublons
 
 # %%

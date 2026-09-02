@@ -106,7 +106,10 @@ MAPPINGS_VALEURS = {
     },
     "approbation_anticipee": {"pre": "Oui", "nopre": "Non"},
     "type_pret": {"type1": "Type_1", "type2": "Type_2", "type3": "Type_3"},
-    "objet_pret": {"p1": "Achat", "p2": "Refinancement", "p3": "Amelioration_habitat", "p4": "Autre"},
+    # p3 recadre volontairement "home improvement" (source immobiliere US) en
+    # categorie generale d'investissement professionnel/agricole : l'application
+    # cible le credit en general (besoins varies), pas le credit immobilier.
+    "objet_pret": {"p1": "Achat", "p2": "Refinancement", "p3": "Investissement_activite", "p4": "Autre"},
     "solvabilite": {"l1": "Standard", "l2": "Sous_standard"},
     "credit_ouvert": {"nopc": "Non", "opc": "Oui"},
     "usage_professionnel": {"nob/c": "Non", "b/c": "Oui"},

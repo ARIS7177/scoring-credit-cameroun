@@ -1,0 +1,218 @@
+CLASSIFICATION DES VARIABLES — SCORING CRÉDIT CAMEROUN
+Document de synthèse — 31 juillet 2026
+Sources : Analyse_et_Plan_Projet.docx (source d'arbitrage), DICTIONNAIRE_DONNEES.docx et
+RAPPORT_VALIDATION.docx (Marie-Thérèse, 30/07), en-tête réelle du dataset
+data/processed/Loan_Default_Cameroun_Enrichi.csv (32 colonnes).
+Toutes les décisions ci-dessous sont tranchées, y compris le point taux_interet/
+frais_initiaux_fcfa réglé le 31/07 (voir section 4.6 d'Analyse_et_Plan_Projet.docx).
+
+==================================================================
+1. COLONNES INUTILES — À SUPPRIMER DU DATASET
+==================================================================
+
+1.A Déjà supprimées par le script 03 (rien à faire)
+- statut_remboursement_label   : doublon exact de la cible (fuite pure)
+- zone_geographique            : redondance 1:1 avec region_cameroun
+- valeur_bien_fcfa             : fuite majeure (absente → 100% défaut) + hors périmètre immobilier
+- ratio_pret_valeur (LTV)      : calculé à partir de valeur_bien_fcfa, même sort
+- type_construction, type_occupation, nombre_unites, garanti_par, type_garantie : module
+  immobilier, hors périmètre "crédit en général"
+- categorie_risque en tant que colonne d'ENTRÉE : n'existe plus comme input, redevient
+  uniquement une SORTIE calculée après la prédiction
+
+1.B Encore présentes dans le CSV actuel, à supprimer en Semaine 2 (nettoyage avancé) —
+    fuite ou infrastructure absente, sans utilité ni modèle ni formulaire
+- plafond_pret            : décision de la banque déjà prise (fuite)
+- approbation_anticipee    : indicateur d'une décision déjà prise (fuite majeure)
+- solvabilite              : proxy d'une évaluation déjà faite (fuite)
+- ecart_taux_interet       : fixé par la banque après évaluation du risque
+- taux_interet             : fixé/ajusté par la banque après évaluation du risque — EXCLU le 31/07
+- frais_initiaux_fcfa      : idem, fixé après octroi — EXCLU le 31/07
+- amortissement_negatif, interet_seul, paiement_forfaitaire : modalités contractuelles fixées
+  à l'octroi, pas avant
+- annee                    : constante (2019 sur toutes les lignes), variance nulle
+- type_credit_bureau, score_credit_bureau, type_credit_coemprunteur : bureaux de crédit
+  individuels inexistants au Cameroun pour le public visé (informel, primo-emprunteurs)
+
+1.C Décision révisée le 31 juillet 2026 — supprimée y compris à titre descriptif
+- region_cameroun : auparavant conservée en formulaire à titre descriptif uniquement
+  (section 3.B). Décision d'Aristide le 31/07 : aucune valeur même descriptive (couverture
+  partielle 4/10 régions, gradient hérité du remapping des régions US d'origine) →
+  supprimée complètement du dataset et du formulaire, pas seulement exclue des features ML.
+
+1.D Décision révisée le 06 août 2026 — supprimée y compris à titre descriptif
+- mode_soumission : signal réel confirmé le 30/07 (28,4% de défaut en agence vs 17,5% en
+  ligne), conservée en section 3.A comme feature ML jusqu'à cette date. Décision d'Aristide
+  le 06/08 : la configuration retenue pour l'application ne traite que des demandes de
+  crédit physique en agence (recadrage de périmètre produit, pas un constat statistique) →
+  la colonne serait constante ("En_agence") pour toute nouvelle demande en production, donc
+  sans aucune valeur même descriptive. Supprimée complètement du dataset (script
+  scripts/06_encodage_normalisation.py), même logique que region_cameroun le 31/07 (section
+  1.C). Contredit la liste finale d'Andy (Liste_finale.docx, 06/08) qui la retient comme une
+  des 3 variables prioritaires — à signaler avant le point d'équipe du 9 août.
+
+1.E Décision d'équipe le 09 août 2026 — supprimée y compris à titre descriptif
+- type_pret (Banque/Microfinance/Cooperative_epargne_credit) : signal statistique réel
+  confirmé (22,8%/34,5%/25,1% de défaut selon catégorie), conservée en section 3.A comme
+  feature ML (3 colonnes one-hot) jusqu'à cette date. Décision d'équipe le 09/08 : le projet
+  se positionne déjà comme une solution de microfinance de base (recadrage de périmètre
+  produit, pas un constat statistique) → la colonne serait constante ("Microfinance") pour
+  toute nouvelle demande en production, donc sans aucune valeur même descriptive. Même
+  logique que region_cameroun (1.C) et mode_soumission (1.D). À supprimer du dataset dans
+  scripts/06_encodage_normalisation.py (retrait des 3 colonnes one-hot type_pret_*) et du
+  formulaire — mise à jour du script et régénération de Loan_Default_Cameroun_Encode.csv à
+  faire par Aristide après le point d'équipe du 09/08, avant le début de la modélisation S3.
+
+==================================================================
+2. COLONNES À CONSERVER (hors classification feature/formulaire)
+==================================================================
+- id_client            : identifiant technique, traçabilité uniquement — jamais une feature,
+  jamais saisi dans un formulaire (auto-généré)
+- statut_remboursement  : LA CIBLE du modèle. Jamais un input. Utilisée en entraînement
+  (donnée historique) et reconstruite en sortie (prédiction + probabilité + décision)
+
+==================================================================
+3. COLONNES DU FORMULAIRE
+==================================================================
+
+--- 3.A UTILES À L'ANALYSE (features statistiques du modèle ML) ---
+Déclarées par le client/agent au moment de la demande, signal statistique réel et
+disponible avant toute décision d'octroi :
+
+- revenu_mensuel_fcfa   : cœur de l'évaluation, feature centrale. 228 lignes (0,15%) sous le
+  seuil de plausibilité de 15 000 FCFA/mois supprimées le 04/08/2026 (nettement sous le SMIG
+  formel camerounais, ~41 875 FCFA/mois) — dataset passé de 148 670 à 148 442 lignes. Seuil
+  volontairement bas (pas au niveau du SMIG) : le public visé inclut le secteur informel, où
+  des revenus réels sous le SMIG formel restent plausibles.
+- montant_pret_fcfa     : montant demandé, feature prédictive
+- duree_mois            : durée du financement, feature prédictive. Régénérée entièrement le
+  04/08/2026 (tranches réalistes camerounaises par objet_pret x montant, 3 à 60 mois) : la
+  distribution héritée du dataset source (360 mois / 30 ans sur 81,8% des lignes, typique d'un
+  prêt hypothécaire américain) ne correspondait à aucune réalité de crédit général/microfinance
+  au Cameroun et rendait en outre la méthode IQR dégénérée (Q1 = Q3 = 360).
+- objet_pret            : finalité du crédit (relibellée "crédit en général")
+- secteur_activite      : signal FORT (23-24% vs 34-37% de défaut selon secteur)
+- credit_ouvert         : ligne de crédit déjà ouverte (signal réel mais rare — 0,4% des
+  lignes, à surveiller en Semaine 2)
+- usage_professionnel   : crédit pro vs perso, signal réel (23,0% vs 34,5%)
+- ratio_endettement     : calculée automatiquement (revenu + charges déclarées), jamais
+  saisie directement, mais alimente le modèle
+
+--- 3.B DESCRIPTIVES SEULEMENT (aucune donnée statistique, jamais des features ML) ---
+Servent au profil du client dans l'app / le rapport, sans jamais entrer dans l'entraînement :
+
+- genre                    : motif éthique (discrimination par genre encadrée/interdite)
+- tranche_age              : décision du 04/08/2026 - régénérée avec une distribution active
+  camerounaise (25-44 ans : 57% au lieu de 35% dans le dataset source, hérité d'un profil de
+  refinancement hypothécaire américain vieillissant), tirée indépendamment de toute autre
+  colonne pour éviter toute fuite. Conséquence assumée : taux de défaut plat sur toutes les
+  tranches (24,0-25,1%, vérifié). Reclassée de feature ML (ancienne section 3.A) à descriptive
+  uniquement, comme niveau_education.
+- niveau_education          : aucun signal statistique (24,0-25,5% de défaut, plat)
+- membre_tontine             : signal quasi nul (24,8% vs 24,5%)
+- activite_saisonniere       : signal quasi nul (25,0% vs 24,1%)
+- utilisation_mobile_money   : signal quasi nul (24,9% vs 24,5%)
+- statut_logement (nouvelle) : pas de preuve statistique disponible (absente du dataset
+  source), risque de recouper revenu/secteur
+- anciennete_activite_mois (nouvelle) : pas de donnée historique disponible pour entraîner
+  dessus ; descriptif V1, candidate feature pour une V2 future
+- personnes_a_charge (nouvelle) : idem, corrige le revenu déclaré en revenu disponible réel,
+  descriptif V1, candidate feature V2
+- charges_mensuelles_fcfa (nouvelle) : pas une feature en soi, sert uniquement au calcul de
+  ratio_endettement en production
+
+--- 3.C PEUT FAIRE PENCHER LA DÉCISION FINALE SANS ÊTRE UNE DONNÉE STATISTIQUE
+    (règle métier / levier de décision, pas un signal appris par le modèle) ---
+
+- garant_caution (nouvelle) : présence d'un garant ou d'une caution solidaire pour ce prêt.
+  Contrairement à toutes les variables ci-dessus, ce n'est pas un pattern statistique à
+  apprendre : ça change la CONSÉQUENCE d'un défaut (recours possible), pas le risque
+  intrinsèque du client. Utilisée directement dans la logique de décision de l'application :
+  un dossier "Étude approfondie" avec garant peut basculer vers "Accordé sous condition".
+  Aucune donnée d'entraînement historique nécessaire, car c'est une règle, pas une
+  corrélation statistique.
+
+==================================================================
+RÉSUMÉ CHIFFRÉ
+==================================================================
+- Section 1 (à supprimer) ......................................... 25 colonnes
+    dont déjà supprimées (script 03) ............................. 9
+    dont encore à supprimer en Semaine 2 (section 1.B) ........... 14
+    dont supprimées ultérieurement, hors dataset ET formulaire
+      (region_cameroun 1.C + mode_soumission 1.D + type_pret 1.E) . 3
+- Section 2 (conservées, hors classification) ...................... 2 colonnes
+- Section 3.A (features ML retenues) ................................ 8 colonnes
+    (tranche_age reclassée en 3.B le 04/08/2026 ; mode_soumission supprimée
+    entièrement le 06/08/2026 ; type_pret supprimé entièrement le 09/08/2026 —
+    voir notes ci-dessous)
+- Section 3.B (descriptives seulement) ............................. 10 colonnes
+- Section 3.C (levier de décision, non statistique) ................. 1 colonne
+
+Nombre de features ML utilisées par le modèle après encodage (one-hot inclus) : 16
+(19 avant le 09/08 ; -3 pour les colonnes one-hot type_pret_* retirées, voir section 1.E).
+
+==================================================================
+NOTE — MISES À JOUR DU 04/08/2026 (Aristide, Semaine 2)
+==================================================================
+Décisions prises pendant le traitement des valeurs manquantes/aberrantes
+(scripts/05_traitement_valeurs.py), en réouverture assumée de points par ailleurs
+tranchés le 29-31/07 (même logique que pour region_cameroun le 31/07 : une donnée
+inutilisable ou trompeuse reste corrigée avant la modélisation, pas après) :
+- duree_mois régénérée (tranches réalistes camerounaises, remplace le profil
+  hypothécaire américain à 30 ans hérité du dataset source).
+- revenu_mensuel_fcfa : 228 lignes (< 15 000 FCFA/mois) supprimées du dataset
+  (dataset : 148 670 → 148 442 lignes), plutôt qu'un plancher/capping — ces
+  valeurs jugées trop peu fiables pour être corrigées et conservées.
+- type_pret relabellisée (Banque/Microfinance/Cooperative_epargne_credit).
+- tranche_age régénérée puis reclassée de feature ML à descriptive uniquement
+  (perte de signal assumée, cf. section 3.B).
+
+==================================================================
+NOTE — MISE À JOUR DU 06/08/2026 (Aristide, Semaine 2)
+==================================================================
+Décisions prises pendant l'encodage/normalisation (scripts/06_encodage_normalisation.py),
+à partir de la liste finale d'Andy (Liste_finale.docx) et de sa documentation Power BI
+(DOCUMENTATION DES RÉSULTATS) reçues le 06/08 :
+- mode_soumission supprimée entièrement (dataset + formulaire), voir section 1.D — la
+  configuration retenue pour l'application se limite au crédit en agence physique, ce qui
+  rend la colonne constante en production malgré son signal réel en historique.
+- 3 divergences constatées avec la liste finale d'Andy, tranchées en faveur des décisions
+  déjà documentées ci-dessus plutôt que de sa liste (à valider en équipe le 09/08) :
+  genre et tranche_age NE sont PAS réintégrées comme features ML (respectivement motif
+  éthique du 29/07 et anti-fuite du 04/08) ; credit_ouvert RESTE une feature ML (statut du
+  30/07, signal réel mais rare — Andy proposait de l'exclure).
+- Point de vigilance transmis à Andy : sa documentation Power BI (répartition par
+  tranche_age, catégories type_pret) a été produite sur Loan_Default_Cameroun_Enrichi.csv,
+  antérieur aux régénérations du 04/08 — à recalculer sur *_Traite.csv avant le 09/08 pour
+  rester cohérent avec le dataset réellement utilisé pour la modélisation.
+
+==================================================================
+NOTE — MISE À JOUR DU 09/08/2026 (décision d'équipe, point du 9 août)
+==================================================================
+- type_pret retiré entièrement du dataset et du formulaire (voir section 1.E) : le projet
+  se positionne déjà comme une solution de microfinance de base, donc la colonne serait
+  toujours constante ("Microfinance") pour toute nouvelle demande en production — même
+  raisonnement que region_cameroun (31/07) et mode_soumission (06/08). Annule la
+  relabellisation Type_1/2/3 → Banque/Microfinance/Cooperative_epargne_credit faite le
+  04/08/2026 (note ci-dessus) : la colonne relabellisée est maintenant supprimée, pas
+  seulement renommée.
+- À faire (Aristide) : mettre à jour scripts/06_encodage_normalisation.py pour ne plus
+  générer les colonnes one-hot type_pret_*, régénérer et recommiter
+  Loan_Default_Cameroun_Encode.csv avant le début de la modélisation (S3).
+- Nombre de features ML final : 16 (au lieu de 19), voir RÉSUMÉ CHIFFRÉ ci-dessus.
+
+==================================================================
+NOTE — DICTIONNAIRE DE MARIE-THÉRÈSE À METTRE À JOUR
+==================================================================
+Son DICTIONNAIRE_DONNEES.docx (30/07) marque encore "MODÈLE ML = Oui" pour region_cameroun,
+membre_tontine, activite_saisonniere, utilisation_mobile_money et taux_interet/
+frais_initiaux_fcfa. À corriger :
+- membre_tontine, activite_saisonniere, utilisation_mobile_money, taux_interet,
+  frais_initiaux_fcfa → MODÈLE ML = Non (restent en formulaire/dataset, descriptif ou
+  retirées selon section 1.B/3.B ci-dessus)
+- region_cameroun → SUPPRIMÉE ENTIÈREMENT (dataset + formulaire), pas juste MODÈLE ML = Non
+  (décision révisée le 31/07, voir section 1.C)
+Simple correction de tableau, pas une nouvelle discussion d'équipe : les faits qui motivent
+chaque exclusion sont déjà confirmés (par son propre rapport de validation pour les 3
+variables régénérées, par Analyse_et_Plan_Projet.docx section 4.6 pour taux_interet/frais,
+et par la décision d'Aristide du 31/07 pour region_cameroun).

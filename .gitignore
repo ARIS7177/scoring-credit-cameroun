@@ -2,6 +2,15 @@ data/raw/*
 data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+# Exception : donnee source non regenerable (secteur_activite/niveau_education
+# de Marie-Therese), necessaire au script 03. Contrairement aux CSV volumineux
+# du pipeline (regeneres localement par les scripts), cette colonne n'a pas
+# d'autre source que sa generation d'origine.
+!data/processed/secteur_activite_niveau_education.csv
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+catboost_info/
+# Identifiants Supabase - ne jamais versionner
+.streamlit/secrets.toml
+app/.streamlit/secrets.toml

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <!-- Credora - Concept A : monogramme "C" aurore -->
+  <!-- Arc en C : cercle centre 60,60 rayon 40, ouverture de 100 degres centree a 0 degre (3h) -->
+  <path d="M 85.72 90.64 A 40 40 0 1 1 85.72 29.36" fill="none" stroke="#1B5E3F" stroke-width="11" stroke-linecap="round"/>
+  <!-- Rayons d'aurore : 3 traits aux angles -30, 0, +30 degres -->
+  <line x1="92.9" y1="41" x2="108.5" y2="32" stroke="#E8A33D" stroke-width="6" stroke-linecap="round"/>
+  <line x1="98" y1="60" x2="118" y2="60" stroke="#E8A33D" stroke-width="7" stroke-linecap="round"/>
+  <line x1="92.9" y1="79" x2="108.5" y2="88" stroke="#E8A33D" stroke-width="6" stroke-linecap="round"/>
+</svg>

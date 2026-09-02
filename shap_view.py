@@ -61,7 +61,6 @@ def charger_modele():
         return None
 
 
-
 @st.cache_resource
 def get_feature_names():
     """Récupère les noms des features du modèle CatBoost."""
@@ -79,20 +78,9 @@ def get_feature_names():
     if hasattr(modele, 'get_feature_names'):
         return list(modele.get_feature_names())
     
-    # Méthode 4: depuis les données d'entraînement (si disponibles)
-    if hasattr(modele, 'feature_importances_'):
-        # Essayer de récupérer depuis le modèle
-        try:
-            # Pour CatBoost, on peut utiliser les colonnes du Pool
-            # Mais on va utiliser une liste par défaut
-            pass
-        except:
-            pass
-    
     # Fallback: utiliser une liste par défaut
-    # Ces noms doivent correspondre aux features utilisées pour l'entraînement
     return [
-        'credit_ouvert', 'usage_professionnel', 'montant_pret_fcfa', 
+        'usage_professionnel', 'montant_pret_fcfa', 
         'duree_mois', 'revenu_mensuel_fcfa', 'ratio_endettement',
         'objet_pret_Achat', 'objet_pret_Autre', 'objet_pret_Investissement_activite',
         'objet_pret_Refinancement', 'secteur_activite_Agriculture',
@@ -139,14 +127,16 @@ def preparer_donnees_client(donnees_brutes):
 def afficher_shap_waterfall(donnees_client):
     """Affiche un waterfall plot SHAP."""
     try:
-    
-        st.markdown("""
-        **Comment lire ce graphique :**
-        - 🔴 **Barres rouges** : variables qui AUGMENTENT le risque de défaut
-        - 🔵 **Barres bleues** : variables qui DIMINUENT le risque de défaut
-        - La flèche en bas montre le score final
-        """)
-        
+        st.info(
+            "**Comment lire ce graphique**  \n"
+            "🔴 **Barres rouges** : ce qui pousse le dossier vers un risque plus élevé.  \n"
+            "🔵 **Barres bleues** : ce qui pousse le dossier vers un risque plus faible.  \n"
+            "**E[f(x)]** (en haut) : le point de départ — la moyenne sur l'ensemble des "
+            "dossiers, avant de prendre en compte les caractéristiques de ce client précis.  \n"
+            "**f(x)** (en bas) : le point d'arrivée — une fois toutes les barres "
+            "appliquées, c'est la valeur qui correspond au score final de ce dossier."
+        )
+
         modele = charger_modele()
         explainer = charger_explainer()
         df_client = preparer_donnees_client(donnees_client)
@@ -183,12 +173,13 @@ def afficher_shap_waterfall(donnees_client):
 def afficher_shap_importance(donnees_client):
     """Affiche un graphique à barres des variables importantes POUR CE CLIENT."""
     try:
-        
-        st.markdown("""
-        Ce graphique classe les variables par ordre d'impact sur la décision.
-        Plus la barre est longue, plus la variable a influencé le score.
-        """)
-        
+        st.info(
+            "Classe les variables selon leur poids dans le calcul **pour ce dossier "
+            "précis** (pas une règle générale valable pour tous les clients) — "
+            "du plus déterminant en haut, au moins déterminant en bas. Plus la "
+            "barre est longue, plus la variable a pesé dans la décision."
+        )
+
         modele = charger_modele()
         explainer = charger_explainer()
         df_client = preparer_donnees_client(donnees_client)
@@ -220,19 +211,32 @@ def afficher_explications(donnees_client):
     Affiche tous les graphiques SHAP en colonnes.
     """
     st.markdown("---")
-    st.header("🔍 Pourquoi ce score ?")
-    st.markdown("""
-    Voici une explication détaillée du score attribué à ce client.
-    Ces graphiques ont été générés avec SHAP (SHapley Additive exPlanations).
-    """)
-    
+    st.header(
+        "🔍 Pourquoi ce score ?",
+        help=(
+            "Ces deux graphiques détaillent, variable par variable, comment le "
+            "score de ce dossier a été construit — calculés avec SHAP, la méthode "
+            "d'explicabilité utilisée dans l'app."
+        ),
+    )
+    st.caption(
+        "Vue détaillée pour approfondir, en complément de la synthèse en langage "
+        "courant affichée plus haut sur la page."
+    )
+
     # Waterfall Plot (pleine largeur)
-    st.subheader("Waterfall Plot - Décomposition du score")
+    st.subheader(
+        "Décomposition du score",
+        help="Montre comment on passe du score moyen de référence au score final de ce client, variable par variable.",
+    )
     afficher_shap_waterfall(donnees_client)
-    
+
     st.write("")  # Ligne vide pour séparer
     st.write("")
-    
+
     # Impact des variables (pleine largeur)
-    st.subheader("Impact des variables - Classement par importance")
+    st.subheader(
+        "Classement par importance",
+        help="Les mêmes variables, mais classées de la plus déterminante à la moins déterminante pour ce dossier.",
+    )
     afficher_shap_importance(donnees_client)
