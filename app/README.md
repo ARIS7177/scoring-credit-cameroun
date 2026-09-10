@@ -86,6 +86,11 @@ les lignes de migration `ALTER TABLE public.users` et `UPDATE public.users`
 présentes dans `docs/supabase/schema.sql`. Les anciens comptes sont conservés
 et leurs champs sont préremplis à partir de `nom_complet`.
 
+Pour conserver les précisions saisies lorsque l'objet du prêt ou le secteur
+d'activité vaut `Autre`, exécuter également les deux commandes
+`ALTER TABLE public.demandes_credit` correspondantes dans
+`docs/supabase/schema.sql`.
+
 ## Fonctionnalités
 
 - Authentification réelle (connexion + inscription) avec mots de passe hachés (bcrypt)

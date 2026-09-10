@@ -105,12 +105,6 @@ LOGO_ICONE_B64 = charger_logo_base64("credora-icon.svg")
 NOM_APP = "Credora"
 
 # --- Palette de marque (identité visuelle Credora, validée en equipe) ---
-# Theme clair et chaleureux ("tropical") : fond blanc/quasi-blanc partout,
-# le vert institutionnel et le corail en accents ponctuels seulement,
-# l'ambre/jaune (couleur du logo) comme couleur interactive principale
-# (boutons primaires, survol). Distincte des couleurs de risque
-# (vert/orange/rouge) utilisees ailleurs pour le score - celles-la ne
-# changent pas, ce sont des signaux metier.
 COULEUR_PRIMAIRE = "#1B5E3F"        # vert foret - accents institutionnels (logo, icones, nav active)
 COULEUR_PRIMAIRE_SOMBRE = "#163f2c"  # variante sombre du vert
 COULEUR_ACCENT = "#E8A33D"          # ambre/jaune - couleur interactive principale (boutons, survol)
@@ -379,7 +373,7 @@ EXEMPLES = {
         "personnes_charge": 3, "logement": "Propriétaire", "anciennete": 36,
         "montant_demande": 2000000, "duree": 24, "objet": "Investissement (activité)",
         "secteur": "Autre", "activite_saisonniere": "Non",
-        "mobile_money": "Oui", "membre_tontine": "Oui", "garant": "Oui (logement en hypothèque)",
+        "garant": "Oui (logement en hypothèque)",
     },
     "moyen": {
         "nom": "NGONO", "prenom": "Manie", "adresse": "Akwa, Douala",
@@ -388,7 +382,7 @@ EXEMPLES = {
         "personnes_charge": 2, "logement": "Locataire", "anciennete": 25,
         "montant_demande": 800000, "duree": 18, "objet": "Investissement (activité)",
         "secteur": "Commerçant indépendant", "activite_saisonniere": "Non",
-        "mobile_money": "Oui", "membre_tontine": "Non", "garant": "Non",
+        "garant": "Non",
     },
     "risque": {
         "nom": "MABO", "prenom": "Oumar", "adresse": "Newbell, Maroua",
@@ -397,14 +391,14 @@ EXEMPLES = {
         "personnes_charge": 5, "logement": "Locataire", "anciennete": 8,
         "montant_demande": 600000, "duree": 12, "objet": "Autre",
         "secteur": "Activité saisonnière", "activite_saisonniere": "Oui",
-        "mobile_money": "Oui", "membre_tontine": "Non", "garant": "Non",
+        "garant": "Non",
     },
 }
 
 VALEURS_PAR_DEFAUT_FORMULAIRE = {
     "revenu": 250000, "charges": 150000, "personnes_charge": 3, "anciennete": 36,
     "montant_demande": 2000000, "duree": 24, "objet": OPTIONS_OBJET[0],
-    "activite_saisonniere": "Non", "mobile_money": "Oui",
+    "activite_saisonniere": "Non",
 }
 
 
@@ -425,6 +419,7 @@ def init_session_state():
         "dernier_score_model": None,
         "dernier_score_categ": None,
         "dernier_montant_recommande": None,
+        "afficher_shap": False,
     }
     for cle, valeur in defaults.items():
         if cle not in st.session_state:
@@ -476,7 +471,7 @@ def envoyer_email_reinitialisation(email, token):
     if not all((host, username, password, sender)):
         return False
 
-    base_url = smtp.get("app_url", "http://localhost:8501")
+    base_url = smtp.get("app_url", "http://localhost:8501")   # Changer cet URL en production
     lien = f"{base_url}?{urlencode({'reset_token': token})}"
     message = EmailMessage()
     message["Subject"] = "Réinitialisation de votre mot de passe Credora"
@@ -1616,16 +1611,16 @@ def page_nouvelle_demande():
     init_formulaire_defaults()
     
     # --- Chargement rapide d'un exemple ---
-    with st.expander("🎯 Charger un exemple pour tester le formulaire"):
+    with st.expander("Charger un profil pour tester le formulaire"):
         e1, e2, e3 = st.columns(3)
         with e1:
-            if st.button("😀 Profil favorable", width="stretch"):
+            if st.button("Profil favorable", width="stretch"):
                 charger_exemple("favorable")
         with e2:
-            if st.button("😐 Profil moyen", width="stretch"):
+            if st.button("Profil moyen", width="stretch"):
                 charger_exemple("moyen")
         with e3:
-            if st.button("⚠️ Profil à risque", width="stretch"):
+            if st.button("Profil à risque", width="stretch"):
                 charger_exemple("risque")
     
     # --- SECTION 1 : IDENTITÉ ---
@@ -1685,6 +1680,13 @@ def page_nouvelle_demande():
             duree = st.selectbox("Durée souhaitée (mois)", OPTIONS_DUREE, key="f_duree")
         with c2:
             objet = st.selectbox("Objet du prêt", OPTIONS_OBJET, key="f_objet")
+        objet_justification = None
+        if objet == "Autre":
+            objet_justification = st.text_input(
+                "Justification de l'objet du prêt *",
+                placeholder="Précisez l'utilisation prévue du crédit",
+                key="f_objet_justification",
+            )
     
     # --- SECTION 4 : ACTIVITÉ PROFESSIONNELLE (+ PRÉDICTION ML EN TEMPS RÉEL) ---
     with st.expander("4. ACTIVITÉ PROFESSIONNELLE — PRÉDICTION ML EN TEMPS RÉEL", expanded=True, key="exp_activite"):
@@ -1695,21 +1697,23 @@ def page_nouvelle_demande():
         with c2:
             anciennete = st.number_input("Ancienneté dans l'activité (mois)", min_value=0, max_value=600,
                                         step=1, key="f_anciennete")
+
+        secteur_justification = None
+        if secteur == "Autre":
+            secteur_justification = st.text_input(
+                "Justification du secteur d'activité *",
+                placeholder="Précisez l'activité exercée",
+                key="f_secteur_justification",
+            )
         
-        c3, c4, c5 = st.columns(3)
-        with c3:
-            activite_saisonniere = st.radio("Activité saisonnière ?", ["Oui", "Non"],
-                                        horizontal=True, key="f_activite_saisonniere")
-        with c4:
-            mobile_money = st.radio("Utilise Mobile Money ?", ["Oui", "Non"],
-                                        horizontal=True, key="f_mobile_money")
-        with c5:
-            membre_tontine = st.radio("Membre de tontine ?", ["Oui", "Non"],
-                                        horizontal=True, key="f_membre_tontine")
+        activite_saisonniere = st.radio(
+            "Activité saisonnière ?", ["Oui", "Non"],
+            horizontal=True, key="f_activite_saisonniere"
+        )
         
         # --- PRÉDICTION ML EN TEMPS RÉEL ---
         st.divider()
-        st.markdown("### 🤖 Prédiction ML (temps réel)")
+        st.markdown("### Prédiction ML en temps réel")
         
         champs_pour_ml = {
             "revenu": revenu,
@@ -1742,7 +1746,7 @@ def page_nouvelle_demande():
 
             score_model, categorie_model, couleur_model, proba_defaut_model, facteurs_model = predire_score_ml(data_ml)
 
-            with st.expander("🔧 Debug temporaire (a retirer une fois le bug identifie)"):
+            with st.expander("Diagnostic technique temporaire"):
                 st.write("data_ml envoye a predire_score_ml :", data_ml)
                 _features_debug = construire_features_pour_modele(data_ml)
                 st.write("Vecteur de features construit :")
@@ -1797,7 +1801,7 @@ def page_nouvelle_demande():
                 st.divider()
                 montant_recommande = recommander_montant_maximum(score_model, revenu, duree)
 
-                st.markdown("### 💰 Montant maximum recommandé (selon le score ML)")
+                st.markdown("### Montant maximum recommandé selon le score ML")
                 col_montant_1, col_montant_2, col_montant_3 = st.columns(3)
                 with col_montant_1:
                     st.metric("Montant demandé", format_fcfa(montant_demande))
@@ -1829,6 +1833,10 @@ def page_nouvelle_demande():
         "Ligne de crédit ouverte": ligne_credit, "Utilisation du crédit": usage_credit,
         "Secteur d'activité": secteur, "Garant / caution": garant,
     }
+    if objet == "Autre":
+        champs_requis["Justification de l'objet du prêt"] = objet_justification
+    if secteur == "Autre":
+        champs_requis["Justification du secteur d'activité"] = secteur_justification
     champs_manquants = [
         nom_champ for nom_champ, valeur in champs_requis.items()
         if valeur is None or (isinstance(valeur, str) and not valeur.strip())
@@ -1862,8 +1870,10 @@ def page_nouvelle_demande():
                 "ligne_credit": ligne_credit, "usage_credit": usage_credit,
                 "personnes_charge": personnes_charge, "logement": logement, "anciennete": anciennete,
                 "montant_demande": montant_demande, "duree": duree, "objet": objet,
+                "objet_justification": objet_justification.strip() if objet_justification else None,
                 "secteur": secteur, "activite_saisonniere": activite_saisonniere,
-                "mobile_money": mobile_money, "membre_tontine": membre_tontine, "garant": garant,
+                "secteur_justification": secteur_justification.strip() if secteur_justification else None,
+                "garant": garant,
             }
             demande_data.update({
                 "score_ml": st.session_state.get("dernier_score_model"),
@@ -1887,6 +1897,7 @@ def page_nouvelle_demande():
                 get_demandes.clear()
                 demande_data["id"] = demande_id
                 st.session_state.demande_data = demande_data
+                st.session_state.afficher_shap = False
                 st.session_state.demande_id_counter += 1
                 go_to("resultats")
             else:
@@ -1939,12 +1950,12 @@ def page_resultats():
             "facteurs": st.session_state.dernier_facteurs_model or [],
         }
         montant_recommande = st.session_state.dernier_montant_recommande or st.session_state.demande_data.get("montant_demande", 0)
-        score_source = "🤖 Modèle ML (CatBoost)"
+        score_source = "Modèle ML (CatBoost)"
     else:
         # Fallback heuristique
         resultat = evaluer_demande_heuristique(data)
         montant_recommande = st.session_state.demande_data.get("montant_demande", 0)
-        score_source = "📊 Système heuristique"
+        score_source = "Système heuristique"
 
     resultat["resume"] = generer_resume_decision(
         resultat["decision"], resultat.get("facteurs") or [], data.get("prenom")
@@ -2036,11 +2047,18 @@ def page_resultats():
     # ==========================================================
     # INTÉGRATION SHAP PAR ANDY - GRAPHIQUES EXPLICATIFS
     # ==========================================================
-    features_ml = construire_features_pour_modele(data)
-    donnees_client = dict(zip(FEATURES_NAMES, features_ml[0]))
+    if not st.session_state.afficher_shap:
+        if st.button("Facteurs explicatifs SHAP", type="secondary", width="stretch"):
+            st.session_state.afficher_shap = True
+            st.rerun()
+    else:
+        if st.button("Masquer les facteurs explicatifs SHAP", width="stretch"):
+            st.session_state.afficher_shap = False
+            st.rerun()
 
-    # Afficher les graphiques SHAP
-    shap_view.afficher_explications(donnees_client)
+        features_ml = construire_features_pour_modele(data)
+        donnees_client = dict(zip(FEATURES_NAMES, features_ml[0]))
+        shap_view.afficher_explications(donnees_client)
     # ==========================================================
     
     st.info(
@@ -2134,7 +2152,7 @@ def page_export_pdf():
         )
         st.divider()
         
-        st.markdown("**📋 INFORMATIONS**")
+        st.markdown("**INFORMATIONS**")
         c1, c2 = st.columns(2)
         with c1:
             st.write(f"ID : {data['id']}")
@@ -2144,7 +2162,7 @@ def page_export_pdf():
             st.write(f"Score ML : {resultat['score']} / 100")
         st.divider()
         
-        st.markdown("**👤 PROFIL**")
+        st.markdown("**PROFIL**")
         c1, c2 = st.columns(2)
         with c1:
             st.write(f"M/Mme **{data['prenom']} {data['nom']}**")
@@ -2152,7 +2170,7 @@ def page_export_pdf():
             st.write(f"Adresse : {data['adresse']}")
         st.divider()
         
-        st.markdown("**💰 DEMANDE**")
+        st.markdown("**INFORMATIONS SUR LA DEMANDE DE CRÉDIT**")
         c1, c2 = st.columns(2)
         with c1:
             st.write(f"Montant demandé : {format_fcfa(data['montant_demande'])}")
@@ -2165,7 +2183,7 @@ def page_export_pdf():
 
         st.divider()
         
-        st.markdown("**✅ ANALYSE DU RISQUE**")
+        st.markdown("**ANALYSE DU RISQUE**")
         c1, c2, c3 = st.columns(3)
         with c1:
             st.metric("Score", f"{resultat['score']}/100")
@@ -2179,7 +2197,7 @@ def page_export_pdf():
 
         if resultat.get("facteurs"):
             st.divider()
-            st.markdown("**🔍 FACTEURS EXPLICATIFS DU SCORE**")
+            st.markdown("**FACTEURS EXPLICATIFS DU SCORE**")
             for nom, valeur, impact, explication in resultat["facteurs"]:
                 signe = "🟢 réduit" if impact >= 0 else "🔴 augmente"
                 st.write(f"- **{nom}** ({valeur}) — {signe} le score de {abs(impact)} pt(s) · {explication}")
@@ -2303,7 +2321,7 @@ def page_parametres():
     st.divider()
     st.subheader("Modèle ML")
     if MODEL:
-        st.success("✅ Modèle CatBoost chargé avec succès")
+        st.success("Modèle CatBoost chargé avec succès")
         st.metric("Nombre de features", len(FEATURES_NAMES))
         st.write("**Features utilisées:**")
         cols = st.columns(2)
@@ -2330,7 +2348,7 @@ def page_parametres():
         "Modèle ML : CatBoost Classifier (16 features)\n\n"
         "Ce système utilise un modèle de machine learning entraîné sur l'historique de remboursement "
         "pour prédire le risque de crédit et recommander un montant maximum.\n\n"
-        "⚠️ Cet outil est un support à la décision uniquement."
+        "Cet outil est un support à la décision uniquement."
     )
 
 
