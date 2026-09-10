@@ -16,6 +16,10 @@ import os
 import sys
 import uuid
 import base64
+import smtplib
+from email.message import EmailMessage
+from urllib.parse import urlencode
+from streamlit_cookies_manager import EncryptedCookieManager
 
 # Ajouter la racine du projet au chemin Python
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -39,6 +43,18 @@ from db_manager import (
     save_demande,
     get_demandes,
     get_agent_info,
+    create_password_reset_token,
+    reset_password_with_token,
+    get_user_by_session,
+)
+
+COOKIES_PASSWORD = (
+    st.secrets.get("cookies", {}).get("password")
+    or st.secrets.get("supabase", {}).get("db_password")
+)
+COOKIES = (
+    EncryptedCookieManager(prefix="credora_", password=COOKIES_PASSWORD)
+    if COOKIES_PASSWORD else None
 )
 
 # =====================================================================
@@ -84,23 +100,11 @@ LOGO_ICONE_B64 = charger_logo_base64("credora-icon.svg")
 
 
 # =====================================================================
-# 0.5 ACCÈS BASE DE DONNÉES
-# =====================================================================
-# La persistance est centralisée dans db_manager.py.
-
-
-# =====================================================================
 # 1. CONFIGURATION GÉNÉRALE DE LA PAGE
 # =====================================================================
 NOM_APP = "Credora"
 
 # --- Palette de marque (identité visuelle Credora, validée en equipe) ---
-# Theme clair et chaleureux ("tropical") : fond blanc/quasi-blanc partout,
-# le vert institutionnel et le corail en accents ponctuels seulement,
-# l'ambre/jaune (couleur du logo) comme couleur interactive principale
-# (boutons primaires, survol). Distincte des couleurs de risque
-# (vert/orange/rouge) utilisees ailleurs pour le score - celles-la ne
-# changent pas, ce sont des signaux metier.
 COULEUR_PRIMAIRE = "#1B5E3F"        # vert foret - accents institutionnels (logo, icones, nav active)
 COULEUR_PRIMAIRE_SOMBRE = "#163f2c"  # variante sombre du vert
 COULEUR_ACCENT = "#E8A33D"          # ambre/jaune - couleur interactive principale (boutons, survol)
@@ -128,7 +132,7 @@ CORAIL_700 = "#A34E30"
 _FAVICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "credora-icon.svg")
 
 st.set_page_config(
-    page_title=f"{NOM_APP} — Scoring Crédit Cameroun",
+    page_title=f"{NOM_APP}",
     page_icon=_FAVICON_PATH if os.path.exists(_FAVICON_PATH) else "🌅",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -259,6 +263,16 @@ st.markdown(
             font-weight: 600;
             letter-spacing: 0.02em;
         }}
+        .credora-link {{
+            color: {COULEUR_PRIMAIRE} !important;
+            font-size: 0.9em;
+            font-weight: 500;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+        }}
+        .credora-link:hover {{
+            color: {COULEUR_ACCENT_SOMBRE} !important;
+        }}
         .credora-chip {{
             display: inline-flex;
             align-items: center;
@@ -359,7 +373,7 @@ EXEMPLES = {
         "personnes_charge": 3, "logement": "Propriétaire", "anciennete": 36,
         "montant_demande": 2000000, "duree": 24, "objet": "Investissement (activité)",
         "secteur": "Autre", "activite_saisonniere": "Non",
-        "mobile_money": "Oui", "membre_tontine": "Oui", "garant": "Oui (logement en hypothèque)",
+        "garant": "Oui (logement en hypothèque)",
     },
     "moyen": {
         "nom": "NGONO", "prenom": "Manie", "adresse": "Akwa, Douala",
@@ -368,7 +382,7 @@ EXEMPLES = {
         "personnes_charge": 2, "logement": "Locataire", "anciennete": 25,
         "montant_demande": 800000, "duree": 18, "objet": "Investissement (activité)",
         "secteur": "Commerçant indépendant", "activite_saisonniere": "Non",
-        "mobile_money": "Oui", "membre_tontine": "Non", "garant": "Non",
+        "garant": "Non",
     },
     "risque": {
         "nom": "MABO", "prenom": "Oumar", "adresse": "Newbell, Maroua",
@@ -377,14 +391,14 @@ EXEMPLES = {
         "personnes_charge": 5, "logement": "Locataire", "anciennete": 8,
         "montant_demande": 600000, "duree": 12, "objet": "Autre",
         "secteur": "Activité saisonnière", "activite_saisonniere": "Oui",
-        "mobile_money": "Oui", "membre_tontine": "Non", "garant": "Non",
+        "garant": "Non",
     },
 }
 
 VALEURS_PAR_DEFAUT_FORMULAIRE = {
     "revenu": 250000, "charges": 150000, "personnes_charge": 3, "anciennete": 36,
     "montant_demande": 2000000, "duree": 24, "objet": OPTIONS_OBJET[0],
-    "activite_saisonniere": "Non", "mobile_money": "Oui",
+    "activite_saisonniere": "Non",
 }
 
 
@@ -405,12 +419,37 @@ def init_session_state():
         "dernier_score_model": None,
         "dernier_score_categ": None,
         "dernier_montant_recommande": None,
+        "afficher_shap": False,
     }
     for cle, valeur in defaults.items():
         if cle not in st.session_state:
             st.session_state[cle] = valeur
  
 init_session_state()
+
+
+def restaurer_session_persistante():
+    """Restaure la session depuis le cookie sans conserver le mot de passe."""
+    if (
+        COOKIES is None
+        or st.session_state.get("authenticated")
+        or st.session_state.pop("deconnexion_en_cours", False)
+    ):
+        return
+    if not COOKIES.ready():
+        st.stop()
+
+    session_id = COOKIES.get("session_id")
+    user = get_user_by_session(session_id) if session_id else None
+    if user:
+        st.session_state.authenticated = True
+        st.session_state.user = user
+        st.session_state.agent_nom = user.get("nom_complet") or user.get("email", "Agent")
+        st.session_state.institution = user.get("institution") or "Microfinance"
+        st.session_state.page = "tableau_de_bord"
+    elif session_id:
+        COOKIES.pop("session_id", None)
+        COOKIES.save()
  
 
 # =====================================================================
@@ -420,6 +459,39 @@ def go_to(nom_page):
     """Change la page active."""
     st.session_state.page = nom_page
     st.rerun()
+
+
+def envoyer_email_reinitialisation(email, token):
+    """Envoie le lien de réinitialisation via SMTP configuré dans secrets."""
+    smtp = st.secrets.get("smtp", {})
+    host = smtp.get("host")
+    username = smtp.get("username")
+    password = smtp.get("password")
+    sender = smtp.get("sender") or username
+    if not all((host, username, password, sender)):
+        return False
+
+    base_url = smtp.get("app_url", "http://localhost:8501")   # Changer cet URL en production
+    lien = f"{base_url}?{urlencode({'reset_token': token})}"
+    message = EmailMessage()
+    message["Subject"] = "Réinitialisation de votre mot de passe Credora"
+    message["From"] = sender
+    message["To"] = email
+    message.set_content(
+        "Bonjour,\n\n"
+        "Utilisez ce lien dans l'heure pour définir un nouveau mot de passe :\n"
+        f"{lien}\n\n"
+        "Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.\n"
+    )
+    try:
+        port = int(smtp.get("port", 587))
+        with smtplib.SMTP(host, port, timeout=10) as serveur:
+            serveur.starttls()
+            serveur.login(username, password)
+            serveur.send_message(message)
+        return True
+    except (OSError, smtplib.SMTPException):
+        return False
 
 
 def format_fcfa(montant):
@@ -846,6 +918,7 @@ def get_historique_demandes():
             df["date"] = pd.to_datetime(df["date_creation"])
             df["nom"] = df["nom_demandeur"]
             df["prenom"] = df["prenom_demandeur"]
+            df["demandeur"] = (df["prenom"].fillna("") + " " + df["nom"].fillna("")).str.strip()
             df["age"] = df["age_tranche"]
             df["profil"] = df["secteur_activite"]
             df["montant"] = df["montant_demande"]
@@ -868,6 +941,7 @@ def get_historique_demandes():
     df["categorie_risque"] = df["profil"]
     df["nom"] = ""
     df["prenom"] = ""
+    df["demandeur"] = ""
     df["id_demande"] = df["id"]
     df["nom_demandeur"] = df["nom"]
     df["montant_demande"] = df["montant"]
@@ -1047,6 +1121,10 @@ def render_sidebar():
                 )
             st.session_state.authenticated = False
             st.session_state.user = None
+            st.session_state.deconnexion_en_cours = True
+            if COOKIES is not None:
+                COOKIES.pop("session_id", None)
+                COOKIES.save()
             go_to("connexion")
 
         st.divider()
@@ -1158,22 +1236,24 @@ def page_connexion():
         unsafe_allow_html=True,
     )
 
-    _, col_centre, _ = st.columns([1, 1.8, 1])
+    _, col_centre, _ = st.columns([1, 1.6, 1])
     with col_centre:
-        logo_html = (
-            f"""<div style="background:#ffffff; border-radius:16px; padding:10px; width:72px; height:72px;
-                            box-sizing:border-box; display:flex; align-items:center; justify-content:center;
-                            box-shadow:0 2px 8px rgba(0,0,0,0.18); margin:0 auto;">
-                    <img src="data:image/svg+xml;base64,{LOGO_ICONE_B64}" width="52" height="52">
-                </div>"""
-            if LOGO_ICONE_B64 else ""
-        )
         st.markdown(
             f"""
             <div style='text-align:center; margin-top:20px;'>
-                {logo_html}
-                <h1 style='color:{COULEUR_PRIMAIRE}; margin:12px 0 0 0; font-weight:700;'>{NOM_APP}</h1>
-                <span style='color:{COULEUR_TEXTE}; opacity:0.75;'>Cameroun — Scoring crédit avec modèle CatBoost intégré</span>
+                <div style='display:flex; align-items:center; justify-content:center; gap:14px;'>
+                    {(
+                        f'''<div style="background:#ffffff; border-radius:16px; padding:10px; width:70px; height:70px;
+                            box-sizing:border-box; display:flex; align-items:center; justify-content:center;
+                            box-shadow:0 2px 8px rgba(0,0,0,0.18);">
+                            <img src="data:image/svg+xml;base64,{LOGO_ICONE_B64}" width="52" height="52">
+                        </div>'''
+                        if LOGO_ICONE_B64 else ""
+                    )}
+                    <h1 style='color:{COULEUR_PRIMAIRE}; margin:0; font-weight:700;'>{NOM_APP}</h1>
+                </div>
+                <span style='color:{COULEUR_TEXTE}; opacity:0.75;'>Apporter de la clarté sur la décision de
+                    crédit grâce aux données et au scoring.</span>
             </div>
             """,
             unsafe_allow_html=True,
@@ -1182,22 +1262,17 @@ def page_connexion():
 
         with st.container(border=True, key="carte_connexion"):
             st.markdown(
-                "<h3 style='text-align: center;'>Connexion agent</h3>",
-                unsafe_allow_html=True
+                f"<h2 style='text-align:center; color:{COULEUR_PRIMAIRE};'>Connexion</h2>",
+                unsafe_allow_html=True,
             )
-            identifiant = st.text_input(
-                "Email ou Nom d'utilisateur",
-                placeholder="exemple@imf.cm",
-            )
-            mot_de_passe = st.text_input(
-                "Mot de passe",
-                type="password",
-            )
-            st.checkbox("Rester connecté")
+            identifiant = st.text_input("Email ou Nom d'utilisateur", placeholder="exemple@imf.cm")
+            mot_de_passe = st.text_input("Mot de passe", type="password")
+            rester_connecte = st.checkbox("Rester connecté")
             
             if st.button("CONNEXION", width="stretch", type="primary"):
                 if identifiant.strip() and mot_de_passe.strip():
-                    user = login_user(identifiant, mot_de_passe)
+                    with st.spinner("Connexion en cours..."):
+                        user = login_user(identifiant, mot_de_passe, remember_me=rester_connecte)
                     if user:
                         st.session_state.authenticated = True
                         st.session_state.user = user
@@ -1205,6 +1280,12 @@ def page_connexion():
                         # (page Parametres peut ensuite les personnaliser pour la session).
                         st.session_state.agent_nom = user.get("nom_complet") or user.get("email", "Agent")
                         st.session_state.institution = user.get("institution") or "Microfinance"
+                        if COOKIES is not None:
+                            if rester_connecte:
+                                COOKIES["session_id"] = user["session_id"]
+                            else:
+                                COOKIES.pop("session_id", None)
+                            COOKIES.save()
                         go_to("tableau_de_bord")
                     else:
                         st.error("Email ou mot de passe incorrect")
@@ -1219,8 +1300,9 @@ def page_connexion():
                 go_to("register")
 
             st.markdown(
-                "<p style='text-align:center; color:#64748b; font-size:0.9em;'>"
-                "Mot de passe oublié? · Aide</p>",
+                "<div style='text-align:right; margin-top:8px;'>"
+                "<a class='credora-link' href='?page=mot_de_passe_oublie'>"
+                "Mot de passe oublié ?</a></div>",
                 unsafe_allow_html=True,
             )
         
@@ -1231,11 +1313,8 @@ def page_connexion():
         )
 
 
-# =====================================================================
-# 6.1 PAGE — INSCRIPTION
-# =====================================================================
-def page_register():
-    """Crée un compte utilisateur avec register_user()."""
+def page_mot_de_passe_oublie():
+    """Demande l'envoi d'un lien de réinitialisation par email."""
     st.markdown(
         f"""
         <style>
@@ -1250,11 +1329,133 @@ def page_register():
     _, col_centre, _ = st.columns([1, 1.8, 1])
     with col_centre:
         st.markdown(
-            f"<h2 style='text-align:center; color:{COULEUR_PRIMAIRE};'>Créer un compte</h2>",
+            f"<h2 style='text-align:center; color:{COULEUR_PRIMAIRE};'>Mot de passe oublié</h2>",
             unsafe_allow_html=True,
         )
+        with st.container(border=True, key="carte_reset_request"):
+            st.write("Saisissez l'adresse email associée à votre compte.")
+            email = st.text_input("Email professionnel", placeholder="exemple@imf.cm")
+            if st.button("Envoyer le lien", width="stretch", type="primary"):
+                email = email.strip().lower()
+                if not email or "@" not in email:
+                    st.error("Veuillez saisir une adresse email valide.")
+                else:
+                    with st.spinner("Envoi du lien de réinitialisation..."):
+                        token = create_password_reset_token(email)
+                        email_envoye = token is not None and envoyer_email_reinitialisation(email, token)
+                    if token is not None and not email_envoye:
+                        st.error("Le service d'envoi d'email n'est pas configuré ou est indisponible.")
+                    else:
+                        st.success(
+                            "Si un compte actif correspond à cette adresse, un lien de réinitialisation "
+                            "vient d'être envoyé. Vérifiez votre boîte de réception."
+                        )
+
+            if st.button("Retour à la connexion", width="stretch"):
+                go_to("connexion")
+
+
+def page_reinitialiser_mot_de_passe(token):
+    """Permet de définir un nouveau mot de passe à partir d'un jeton valide."""
+    st.markdown(
+        f"""
+        <style>
+        .stApp {{ background: linear-gradient(160deg, #ffffff 0%, {COULEUR_FOND_SIDEBAR} 55%, #fdecd2 100%) !important; }}
+        [data-testid="collapsedControl"] {{ display: none; }}
+        section[data-testid="stSidebar"] {{ display: none; }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    _, col_centre, _ = st.columns([1, 1.8, 1])
+    with col_centre:
+        st.markdown(
+            f"<h2 style='text-align:center; color:{COULEUR_PRIMAIRE};'>Nouveau mot de passe</h2>",
+            unsafe_allow_html=True,
+        )
+        with st.container(border=True, key="carte_reset_password"):
+            nouveau_mot_de_passe = st.text_input("Nouveau mot de passe", type="password")
+            confirmation = st.text_input("Confirmer le mot de passe", type="password")
+            if st.button("Réinitialiser le mot de passe", width="stretch", type="primary"):
+                if len(nouveau_mot_de_passe) < 8:
+                    st.error("Le mot de passe doit contenir au moins 8 caractères.")
+                elif nouveau_mot_de_passe != confirmation:
+                    st.error("Les mots de passe ne correspondent pas.")
+                else:
+                    with st.spinner("Réinitialisation du mot de passe..."):
+                        reset_reussi = reset_password_with_token(token, nouveau_mot_de_passe)
+                    if reset_reussi:
+                        st.query_params.clear()
+                        st.session_state.registration_message = (
+                            "Votre mot de passe a été réinitialisé. Vous pouvez vous connecter."
+                        )
+                        go_to("connexion")
+                    else:
+                        st.error("Ce lien est invalide ou expiré. Demandez un nouveau lien.")
+
+            if st.button("Retour à la connexion", width="stretch"):
+                st.query_params.clear()
+                go_to("connexion")
+
+
+# =====================================================================
+# 6.1 PAGE — INSCRIPTION
+# =====================================================================
+def page_register():
+    """Crée un compte utilisateur avec register_user()."""
+    st.markdown(
+        f"""
+        <style>
+        .stApp {{ background: linear-gradient(160deg, #ffffff 0%, {COULEUR_FOND_SIDEBAR} 55%, #fdecd2 100%) !important; }}
+        [data-testid="collapsedControl"] {{ display: none; }}
+        section[data-testid="stSidebar"] {{ display: none; }}
+        .st-key-carte_register div[data-testid="stTextInputRootElement"] {{
+            border: 1.5px solid {COULEUR_ACCENT} !important;
+            border-radius: 6px !important;
+        }}
+        .st-key-carte_register div[data-testid="stTextInputRootElement"]:focus-within {{
+            border-color: {COULEUR_ACCENT_SOMBRE} !important;
+            box-shadow: 0 0 0 2px rgba(232, 163, 61, 0.18) !important;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    _, col_centre, _ = st.columns([1, 1.6, 1])
+    with col_centre:
+        st.markdown(
+            f"""
+            <div style='text-align:center; margin-top:20px;'>
+                <div style='display:flex; align-items:center; justify-content:center; gap:14px;'>
+                    {(
+                        f'''<div style="background:#ffffff; border-radius:16px; padding:10px; width:70px; height:70px;
+                                     box-sizing:border-box; display:flex; align-items:center; justify-content:center;
+                                     box-shadow:0 2px 8px rgba(0,0,0,0.18);">
+                                <img src="data:image/svg+xml;base64,{LOGO_ICONE_B64}" width="52" height="52">
+                            </div>'''
+                        if LOGO_ICONE_B64 else ""
+                    )}
+                    <h1 style='color:{COULEUR_PRIMAIRE}; margin:0; font-weight:700;'>{NOM_APP}</h1>
+                </div>
+                <span style='color:{COULEUR_TEXTE}; opacity:0.75;'>Apporter de la clarté sur la décision de
+                    crédit grâce aux données et au scoring.</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
         with st.container(border=True, key="carte_register"):
-            nom_complet = st.text_input("Nom complet *", placeholder="Ex : KOM Olivier")
+            st.markdown(
+                f"<h2 style='text-align:center; color:{COULEUR_PRIMAIRE};'>Créer un compte</h2>",
+                unsafe_allow_html=True,
+            )
+            col_nom, col_prenom = st.columns(2)
+            with col_nom:
+                nom = st.text_input("Nom *", placeholder="Ex : KOM")
+            with col_prenom:
+                prenom = st.text_input("Prénom *", placeholder="Ex : Olivier")
             email = st.text_input("Email professionnel *", placeholder="exemple@imf.cm")
             institution = st.text_input("Institution *", value="Microfinance XYZ")
             col_password, col_confirmation = st.columns(2)
@@ -1265,10 +1466,11 @@ def page_register():
 
             if st.button("Créer le compte", width="stretch", type="primary"):
                 email = email.strip().lower()
-                nom_complet = nom_complet.strip()
+                nom = nom.strip()
+                prenom = prenom.strip()
                 institution = institution.strip()
 
-                if not nom_complet or not email or not institution or not mot_de_passe:
+                if not nom or not prenom or not email or not institution or not mot_de_passe:
                     st.error("Veuillez renseigner tous les champs obligatoires.")
                 elif "@" not in email:
                     st.error("Veuillez saisir une adresse email valide.")
@@ -1277,9 +1479,10 @@ def page_register():
                 elif len(mot_de_passe) < 8:
                     st.error("Le mot de passe doit contenir au moins 8 caractères.")
                 else:
-                    succes, message = register_user(
-                        email, mot_de_passe, nom_complet, institution, "agent"
-                    )
+                    with st.spinner("Création du compte..."):
+                        succes, message = register_user(
+                            email, mot_de_passe, nom, prenom, institution, "agent"
+                        )
                     if succes:
                         st.session_state.registration_message = message
                         go_to("connexion")
@@ -1308,7 +1511,7 @@ def page_tableau_de_bord():
     col_titre, col_bouton = st.columns([3, 1])
     with col_titre:
         nom = st.session_state.user.get("nom_complet", "Agent") if st.session_state.user else "Agent"
-        st.title(f"Bienvenue, Agent {nom} 👋")
+        st.title(f"Bienvenue, Agent {nom}")
         st.caption(datetime.now().strftime("%A %d %B %Y — %Hh%M"))
     with col_bouton:
         st.write("")
@@ -1359,7 +1562,8 @@ def page_tableau_de_bord():
                     if not df.empty:
                         recentes = df.head(5)
                         st.dataframe(
-                            recentes[["id", "nom", "montant", "decision", "score"]],
+                            recentes[["id", "demandeur", "montant", "decision", "score"]],
+                            column_config={"demandeur": "Nom du demandeur"},
                             use_container_width=True, hide_index=True,
 
                         )
@@ -1368,11 +1572,11 @@ def page_tableau_de_bord():
                     go_to("historique")
             
             st.write("**Demandes récentes**")
-            recentes = df.sort_values("date", ascending=False).head(3)[["id", "profil", "age", "decision", "score"]]
+            recentes = df.sort_values("date", ascending=False).head(3)[["id", "demandeur", "profil", "age", "decision", "score"]]
             st.dataframe(
                 recentes,
                 column_config={
-                    "id": "ID", "profil": "Profil", "age": "Âge", "decision": "Statut",
+                    "id": "ID", "demandeur": "Nom du demandeur", "profil": "Profil", "age": "Âge", "decision": "Statut",
                     "score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d/100"),
                 },
                 hide_index=True, use_container_width=True,
@@ -1407,16 +1611,16 @@ def page_nouvelle_demande():
     init_formulaire_defaults()
     
     # --- Chargement rapide d'un exemple ---
-    with st.expander("🎯 Charger un exemple pour tester le formulaire"):
+    with st.expander("Charger un profil pour tester le formulaire"):
         e1, e2, e3 = st.columns(3)
         with e1:
-            if st.button("😀 Profil favorable", width="stretch"):
+            if st.button("Profil favorable", width="stretch"):
                 charger_exemple("favorable")
         with e2:
-            if st.button("😐 Profil moyen", width="stretch"):
+            if st.button("Profil moyen", width="stretch"):
                 charger_exemple("moyen")
         with e3:
-            if st.button("⚠️ Profil à risque", width="stretch"):
+            if st.button("Profil à risque", width="stretch"):
                 charger_exemple("risque")
     
     # --- SECTION 1 : IDENTITÉ ---
@@ -1476,6 +1680,13 @@ def page_nouvelle_demande():
             duree = st.selectbox("Durée souhaitée (mois)", OPTIONS_DUREE, key="f_duree")
         with c2:
             objet = st.selectbox("Objet du prêt", OPTIONS_OBJET, key="f_objet")
+        objet_justification = None
+        if objet == "Autre":
+            objet_justification = st.text_input(
+                "Justification de l'objet du prêt *",
+                placeholder="Précisez l'utilisation prévue du crédit",
+                key="f_objet_justification",
+            )
     
     # --- SECTION 4 : ACTIVITÉ PROFESSIONNELLE (+ PRÉDICTION ML EN TEMPS RÉEL) ---
     with st.expander("4. ACTIVITÉ PROFESSIONNELLE — PRÉDICTION ML EN TEMPS RÉEL", expanded=True, key="exp_activite"):
@@ -1486,21 +1697,23 @@ def page_nouvelle_demande():
         with c2:
             anciennete = st.number_input("Ancienneté dans l'activité (mois)", min_value=0, max_value=600,
                                         step=1, key="f_anciennete")
+
+        secteur_justification = None
+        if secteur == "Autre":
+            secteur_justification = st.text_input(
+                "Justification du secteur d'activité *",
+                placeholder="Précisez l'activité exercée",
+                key="f_secteur_justification",
+            )
         
-        c3, c4, c5 = st.columns(3)
-        with c3:
-            activite_saisonniere = st.radio("Activité saisonnière ?", ["Oui", "Non"],
-                                        horizontal=True, key="f_activite_saisonniere")
-        with c4:
-            mobile_money = st.radio("Utilise Mobile Money ?", ["Oui", "Non"],
-                                        horizontal=True, key="f_mobile_money")
-        with c5:
-            membre_tontine = st.radio("Membre de tontine ?", ["Oui", "Non"],
-                                        horizontal=True, key="f_membre_tontine")
+        activite_saisonniere = st.radio(
+            "Activité saisonnière ?", ["Oui", "Non"],
+            horizontal=True, key="f_activite_saisonniere"
+        )
         
         # --- PRÉDICTION ML EN TEMPS RÉEL ---
         st.divider()
-        st.markdown("### 🤖 Prédiction ML (temps réel)")
+        st.markdown("### Prédiction ML en temps réel")
         
         champs_pour_ml = {
             "revenu": revenu,
@@ -1533,7 +1746,7 @@ def page_nouvelle_demande():
 
             score_model, categorie_model, couleur_model, proba_defaut_model, facteurs_model = predire_score_ml(data_ml)
 
-            with st.expander("🔧 Debug temporaire (a retirer une fois le bug identifie)"):
+            with st.expander("Diagnostic technique temporaire"):
                 st.write("data_ml envoye a predire_score_ml :", data_ml)
                 _features_debug = construire_features_pour_modele(data_ml)
                 st.write("Vecteur de features construit :")
@@ -1588,7 +1801,7 @@ def page_nouvelle_demande():
                 st.divider()
                 montant_recommande = recommander_montant_maximum(score_model, revenu, duree)
 
-                st.markdown("### 💰 Montant maximum recommandé (selon le score ML)")
+                st.markdown("### Montant maximum recommandé selon le score ML")
                 col_montant_1, col_montant_2, col_montant_3 = st.columns(3)
                 with col_montant_1:
                     st.metric("Montant demandé", format_fcfa(montant_demande))
@@ -1620,6 +1833,10 @@ def page_nouvelle_demande():
         "Ligne de crédit ouverte": ligne_credit, "Utilisation du crédit": usage_credit,
         "Secteur d'activité": secteur, "Garant / caution": garant,
     }
+    if objet == "Autre":
+        champs_requis["Justification de l'objet du prêt"] = objet_justification
+    if secteur == "Autre":
+        champs_requis["Justification du secteur d'activité"] = secteur_justification
     champs_manquants = [
         nom_champ for nom_champ, valeur in champs_requis.items()
         if valeur is None or (isinstance(valeur, str) and not valeur.strip())
@@ -1653,8 +1870,10 @@ def page_nouvelle_demande():
                 "ligne_credit": ligne_credit, "usage_credit": usage_credit,
                 "personnes_charge": personnes_charge, "logement": logement, "anciennete": anciennete,
                 "montant_demande": montant_demande, "duree": duree, "objet": objet,
+                "objet_justification": objet_justification.strip() if objet_justification else None,
                 "secteur": secteur, "activite_saisonniere": activite_saisonniere,
-                "mobile_money": mobile_money, "membre_tontine": membre_tontine, "garant": garant,
+                "secteur_justification": secteur_justification.strip() if secteur_justification else None,
+                "garant": garant,
             }
             demande_data.update({
                 "score_ml": st.session_state.get("dernier_score_model"),
@@ -1672,11 +1891,13 @@ def page_nouvelle_demande():
             })
 
             user = st.session_state.get("user")
-            demande_id = save_demande(demande_data, user["id"]) if user else None
+            with st.spinner("Enregistrement de la demande..."):
+                demande_id = save_demande(demande_data, user["id"]) if user else None
             if demande_id:
                 get_demandes.clear()
                 demande_data["id"] = demande_id
                 st.session_state.demande_data = demande_data
+                st.session_state.afficher_shap = False
                 st.session_state.demande_id_counter += 1
                 go_to("resultats")
             else:
@@ -1729,12 +1950,12 @@ def page_resultats():
             "facteurs": st.session_state.dernier_facteurs_model or [],
         }
         montant_recommande = st.session_state.dernier_montant_recommande or st.session_state.demande_data.get("montant_demande", 0)
-        score_source = "🤖 Modèle ML (CatBoost)"
+        score_source = "Modèle ML (CatBoost)"
     else:
         # Fallback heuristique
         resultat = evaluer_demande_heuristique(data)
         montant_recommande = st.session_state.demande_data.get("montant_demande", 0)
-        score_source = "📊 Système heuristique"
+        score_source = "Système heuristique"
 
     resultat["resume"] = generer_resume_decision(
         resultat["decision"], resultat.get("facteurs") or [], data.get("prenom")
@@ -1826,11 +2047,18 @@ def page_resultats():
     # ==========================================================
     # INTÉGRATION SHAP PAR ANDY - GRAPHIQUES EXPLICATIFS
     # ==========================================================
-    features_ml = construire_features_pour_modele(data)
-    donnees_client = dict(zip(FEATURES_NAMES, features_ml[0]))
+    if not st.session_state.afficher_shap:
+        if st.button("Facteurs explicatifs SHAP", type="secondary", width="stretch"):
+            st.session_state.afficher_shap = True
+            st.rerun()
+    else:
+        if st.button("Masquer les facteurs explicatifs SHAP", width="stretch"):
+            st.session_state.afficher_shap = False
+            st.rerun()
 
-    # Afficher les graphiques SHAP
-    shap_view.afficher_explications(donnees_client)
+        features_ml = construire_features_pour_modele(data)
+        donnees_client = dict(zip(FEATURES_NAMES, features_ml[0]))
+        shap_view.afficher_explications(donnees_client)
     # ==========================================================
     
     st.info(
@@ -1924,7 +2152,7 @@ def page_export_pdf():
         )
         st.divider()
         
-        st.markdown("**📋 INFORMATIONS**")
+        st.markdown("**INFORMATIONS**")
         c1, c2 = st.columns(2)
         with c1:
             st.write(f"ID : {data['id']}")
@@ -1934,7 +2162,7 @@ def page_export_pdf():
             st.write(f"Score ML : {resultat['score']} / 100")
         st.divider()
         
-        st.markdown("**👤 PROFIL**")
+        st.markdown("**PROFIL**")
         c1, c2 = st.columns(2)
         with c1:
             st.write(f"M/Mme **{data['prenom']} {data['nom']}**")
@@ -1942,7 +2170,7 @@ def page_export_pdf():
             st.write(f"Adresse : {data['adresse']}")
         st.divider()
         
-        st.markdown("**💰 DEMANDE**")
+        st.markdown("**INFORMATIONS SUR LA DEMANDE DE CRÉDIT**")
         c1, c2 = st.columns(2)
         with c1:
             st.write(f"Montant demandé : {format_fcfa(data['montant_demande'])}")
@@ -1955,7 +2183,7 @@ def page_export_pdf():
 
         st.divider()
         
-        st.markdown("**✅ ANALYSE DU RISQUE**")
+        st.markdown("**ANALYSE DU RISQUE**")
         c1, c2, c3 = st.columns(3)
         with c1:
             st.metric("Score", f"{resultat['score']}/100")
@@ -1969,7 +2197,7 @@ def page_export_pdf():
 
         if resultat.get("facteurs"):
             st.divider()
-            st.markdown("**🔍 FACTEURS EXPLICATIFS DU SCORE**")
+            st.markdown("**FACTEURS EXPLICATIFS DU SCORE**")
             for nom, valeur, impact, explication in resultat["facteurs"]:
                 signe = "🟢 réduit" if impact >= 0 else "🔴 augmente"
                 st.write(f"- **{nom}** ({valeur}) — {signe} le score de {abs(impact)} pt(s) · {explication}")
@@ -2014,19 +2242,25 @@ def page_historique():
     with c2:
         score_min, score_max = st.slider("Plage de score", 0, 100, (0, 100))
     with c3:
-        recherche = st.text_input("Rechercher un ID", "")
+        recherche = st.text_input("Rechercher un ID ou un demandeur", "")
     
     df_filtre = df[df["decision"].isin(decisions_selectionnes)]
     df_filtre = df_filtre[(df_filtre["score"] >= score_min) & (df_filtre["score"] <= score_max)]
     if recherche:
-        df_filtre = df_filtre[df_filtre["id"].str.contains(recherche, case=False)]
+        recherche = recherche.strip()
+        correspondance = (
+            df_filtre["id"].fillna("").astype(str).str.contains(recherche, case=False, regex=False)
+            | df_filtre["demandeur"].fillna("").astype(str).str.contains(recherche, case=False, regex=False)
+        )
+        df_filtre = df_filtre[correspondance]
     df_filtre = df_filtre.sort_values("date", ascending=False)
     
     st.caption(f"{len(df_filtre)} demande(s) trouvée(s) sur {len(df)}")
     historique_visible = df_filtre[
-        ["id", "date", "profil", "age", "montant", "decision", "score"]
+        ["id", "demandeur", "date", "profil", "age", "montant", "decision", "score"]
     ].rename(columns={
         "id": "ID demande",
+        "demandeur": "Nom du demandeur",
         "date": "Date",
         "profil": "Profil",
         "age": "Tranche d'âge",
@@ -2087,7 +2321,7 @@ def page_parametres():
     st.divider()
     st.subheader("Modèle ML")
     if MODEL:
-        st.success("✅ Modèle CatBoost chargé avec succès")
+        st.success("Modèle CatBoost chargé avec succès")
         st.metric("Nombre de features", len(FEATURES_NAMES))
         st.write("**Features utilisées:**")
         cols = st.columns(2)
@@ -2114,7 +2348,7 @@ def page_parametres():
         "Modèle ML : CatBoost Classifier (16 features)\n\n"
         "Ce système utilise un modèle de machine learning entraîné sur l'historique de remboursement "
         "pour prédire le risque de crédit et recommander un montant maximum.\n\n"
-        "⚠️ Cet outil est un support à la décision uniquement."
+        "Cet outil est un support à la décision uniquement."
     )
 
 
@@ -2123,13 +2357,26 @@ def page_parametres():
 # =====================================================================
 def main():
     """Point d'entrée principal."""
-    if not st.session_state.authenticated and st.session_state.page != "connexion":
-        if st.session_state.page != "register":
-            st.session_state.page = "connexion"
+    restaurer_session_persistante()
+
+    reset_token = st.query_params.get("reset_token")
+    if reset_token:
+        page_reinitialiser_mot_de_passe(reset_token)
+        return
+
+    page_param = st.query_params.get("page")
+    if page_param in {"connexion", "register", "mot_de_passe_oublie"}:
+        st.session_state.page = page_param
+        st.query_params.clear()
+
+    pages_publiques = {"connexion", "register", "mot_de_passe_oublie"}
+    if not st.session_state.authenticated and st.session_state.page not in pages_publiques:
+        st.session_state.page = "connexion"
     
     routes = {
         "connexion": page_connexion,
         "register": page_register,
+        "mot_de_passe_oublie": page_mot_de_passe_oublie,
         "tableau_de_bord": page_tableau_de_bord,
         "nouvelle_demande": page_nouvelle_demande,
         "resultats": page_resultats,

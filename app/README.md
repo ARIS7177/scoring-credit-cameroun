@@ -48,11 +48,48 @@ db_user = "postgres"
 db_port = 5432
 db_name = "postgres"
 db_password = "xxxxxxxx"
+
+[smtp]
+host = "smtp.example.com"
+port = 587
+username = "no-reply@example.com"
+password = "xxxxxxxx"
+sender = "no-reply@example.com"
+app_url = "https://credora.example.com"
 ```
 
 Demander ces identifiants au membre de l'équipe responsable du projet
 Supabase. Sans ce fichier, l'application se lance normalement mais
 l'authentification échoue proprement (message d'erreur, pas de plantage).
+
+Pour activer « Mot de passe oublié », exécuter la section
+`TABLE 6 : JETONS DE RÉINITIALISATION DU MOT DE PASSE` de
+`docs/supabase/schema.sql` dans l'éditeur SQL Supabase, puis renseigner la
+section `[smtp]`. Le lien envoyé expire après une heure et ne peut être
+utilisé qu'une seule fois.
+
+La case « Rester connecté » conserve uniquement un jeton de session chiffré
+dans le navigateur. La session dure 1 jour lorsque la case est cochée et
+8 heures sinon. La clé de chiffrement peut être ajoutée ainsi dans
+`.streamlit/secrets.toml` :
+
+```toml
+[cookies]
+password = "une-cle-secrete-longue-et-aleatoire"
+```
+
+En l'absence de cette section, l'application utilise le secret de connexion
+Supabase comme solution de repli.
+
+Pour séparer le nom et le prénom des nouveaux agents, exécuter dans Supabase
+les lignes de migration `ALTER TABLE public.users` et `UPDATE public.users`
+présentes dans `docs/supabase/schema.sql`. Les anciens comptes sont conservés
+et leurs champs sont préremplis à partir de `nom_complet`.
+
+Pour conserver les précisions saisies lorsque l'objet du prêt ou le secteur
+d'activité vaut `Autre`, exécuter également les deux commandes
+`ALTER TABLE public.demandes_credit` correspondantes dans
+`docs/supabase/schema.sql`.
 
 ## Fonctionnalités
 
