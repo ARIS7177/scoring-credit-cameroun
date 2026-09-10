@@ -11,8 +11,7 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 catboost_info/
-=======
 # Identifiants Supabase - ne jamais versionner
 .streamlit/secrets.toml
 app/.streamlit/secrets.toml
->>>>>>> origin/aristide
+**/.streamlit/secrets.toml
