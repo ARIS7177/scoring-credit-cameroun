@@ -42,6 +42,7 @@ from db_manager import (
     logout_user,
     save_demande,
     get_demandes,
+    get_demande_detail,
     get_agent_info,
     create_password_reset_token,
     reset_password_with_token,
@@ -966,6 +967,61 @@ def get_historique_demandes():
     df["montant_demande"] = df["montant"]
     df["score_ml"] = df["score"]
     return df
+
+
+def reconstruire_data_depuis_ligne_db(ligne):
+    """Reconstruit le dict `data` (meme forme que celui construit dans
+    page_nouvelle_demande) a partir d'une ligne complete de
+    public.demandes_credit (get_demande_detail), pour reafficher la page
+    Resultat d'une demande passee depuis l'Historique."""
+    revenu = float(ligne.get("revenu_mensuel") or 0)
+    charges = float(ligne.get("charges_mensuelles") or 0)
+    return {
+        "id": ligne.get("id_demande"),
+        "nom": ligne.get("nom_demandeur") or "",
+        "prenom": ligne.get("prenom_demandeur") or "",
+        "adresse": ligne.get("adresse_demandeur") or "",
+        "genre": ligne.get("genre"),
+        "age": ligne.get("age_tranche"),
+        "education": ligne.get("education"),
+        "revenu": revenu,
+        "charges": charges,
+        "ratio_endettement": calc_ratio_endettement(revenu, charges),
+        "ligne_credit": "Oui" if ligne.get("ligne_credit_ouverte") else "Non",
+        "usage_credit": ligne.get("usage_credit"),
+        "logement": ligne.get("logement_situation"),
+        "anciennete": ligne.get("anciennete_activite") or 0,
+        "montant_demande": float(ligne.get("montant_demande") or 0),
+        "duree": int(ligne.get("duree_mois") or 0),
+        "objet": ligne.get("objet_pret"),
+        "objet_justification": ligne.get("objet_pret_justification"),
+        "secteur": ligne.get("secteur_activite"),
+        "activite_saisonniere": "Oui" if ligne.get("activite_saisonniere") else "Non",
+        "secteur_justification": ligne.get("secteur_activite_justification"),
+        "garant": ligne.get("garant"),
+    }
+
+
+def rouvrir_demande_sur_resultats(id_demande):
+    """Recharge une demande depuis Supabase par son id_demande et bascule
+    sur la page Resultat, pour qu'un clic sur une ligne de l'Historique (ou
+    du Dashboard) reaffiche exactement ce que l'agent avait vu a l'epoque."""
+    detail = get_demande_detail(id_demande)
+    if not detail:
+        st.warning("Détail introuvable pour cette demande (données de démonstration ou demande supprimée).")
+        return
+    data = reconstruire_data_depuis_ligne_db(detail)
+    score_ml = detail.get("score_ml")
+    score_ml = int(score_ml) if score_ml is not None else None
+    st.session_state.demande_data = data
+    st.session_state.dernier_score_model = score_ml
+    st.session_state.dernier_score_categ = detail.get("categorie_risque")
+    st.session_state.dernier_montant_recommande = (
+        recommander_montant_maximum(score_ml, data["revenu"], data["duree"])
+        if score_ml is not None else data["montant_demande"]
+    )
+    st.session_state.dernier_facteurs_model = []
+    go_to("resultats")
 
 
 def generer_pdf(data, resultat, montant_disponible, taux, mensualite, score_model=None):
@@ -2221,7 +2277,8 @@ def page_historique():
         "score": "Score",
     })
     
-    st.dataframe(
+    st.caption("💡 Cliquez sur une ligne pour revoir le résultat complet de cette demande.")
+    evenement = st.dataframe(
         historique_visible.style.apply(
             style_ligne_selon_decision, col_decision="Décision",
             colonnes_a_colorer=("Décision", "Score"), axis=1,
@@ -2233,7 +2290,14 @@ def page_historique():
         },
         use_container_width=True,
         hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
     )
+
+    lignes_selectionnees = evenement.selection.rows if evenement and evenement.selection else []
+    if lignes_selectionnees:
+        id_choisi = historique_visible.iloc[lignes_selectionnees[0]]["ID demande"]
+        rouvrir_demande_sur_resultats(id_choisi)
 
 
 # =====================================================================

@@ -465,8 +465,10 @@ def get_demandes(
 
 
 def get_demande_detail(demande_id: str) -> Optional[Dict]:
-    """Récupère tous les détails d'une demande."""
-    query = "SELECT * FROM public.demandes_credit WHERE id = %s LIMIT 1"
+    """Récupère tous les détails d'une demande, à partir de son id_demande
+    (l'identifiant affiché partout dans l'interface, ex. "#20260911-0001"),
+    pas de la clé primaire interne."""
+    query = "SELECT * FROM public.demandes_credit WHERE id_demande = %s LIMIT 1"
     result = execute_query(query, (demande_id,), fetch=True)
     return dict(result[0]) if result and len(result) > 0 else None
 
