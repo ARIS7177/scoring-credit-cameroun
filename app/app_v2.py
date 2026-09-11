@@ -420,7 +420,6 @@ def init_session_state():
         "dernier_score_model": None,
         "dernier_score_categ": None,
         "dernier_montant_recommande": None,
-        "afficher_shap": False,
     }
     for cle, valeur in defaults.items():
         if cle not in st.session_state:
@@ -1830,7 +1829,6 @@ def page_nouvelle_demande():
                 get_demandes.clear()
                 demande_data["id"] = demande_id
                 st.session_state.demande_data = demande_data
-                st.session_state.afficher_shap = False
                 st.session_state.demande_id_counter += 1
                 go_to("resultats")
             else:
@@ -1979,21 +1977,13 @@ def page_resultats():
     
     # ==========================================================
     # INTÉGRATION SHAP PAR ANDY - GRAPHIQUES EXPLICATIFS
+    # Sur une page dédiée (pas affiché directement, jugé peu utile pour un
+    # utilisateur non technique) : le bouton y renvoie, potentiellement
+    # utile pour un profil plus expert.
     # ==========================================================
-    if not st.session_state.afficher_shap:
-        if st.button("Facteurs explicatifs SHAP", type="secondary", width="stretch"):
-            st.session_state.afficher_shap = True
-            st.rerun()
-    else:
-        if st.button("Masquer les facteurs explicatifs SHAP", width="stretch"):
-            st.session_state.afficher_shap = False
-            st.rerun()
+    if st.button("Facteurs explicatifs SHAP", type="secondary", width="stretch"):
+        go_to("explicabilite_shap")
 
-        features_ml = construire_features_pour_modele(data)
-        donnees_client = dict(zip(FEATURES_NAMES, features_ml[0]))
-        shap_view.afficher_explications(donnees_client)
-    # ==========================================================
-    
     st.info(
         "**Cet outil est un support à la décision uniquement.** La décision finale reste du "
         "ressort du comité de crédit. Tous les facteurs contextuels et humains doivent être "
@@ -2014,6 +2004,35 @@ def page_resultats():
             st.session_state.taux_indicatif = taux_indicatif
             st.session_state.mensualite = mensualite
             go_to("export_pdf")
+
+
+# =====================================================================
+# 9.1 PAGE — EXPLICABILITÉ SHAP (DÉTAILLÉE, RÉSERVÉE AU BOUTON DÉDIÉ)
+# =====================================================================
+def page_explicabilite_shap():
+    """Page dédiée aux graphiques SHAP détaillés. Accessible uniquement
+    via le bouton "Facteurs explicatifs SHAP" de la page Résultat — pas
+    affichée par défaut, jugée peu utile pour un utilisateur non
+    technique mais potentiellement utile pour un profil plus expert."""
+    render_sidebar()
+    render_entete()
+
+    data = st.session_state.demande_data
+    if not data:
+        st.warning("Aucune demande à expliquer.")
+        if st.button("← Retour aux résultats"):
+            go_to("resultats")
+        return
+
+    if st.button("← Retour aux résultats"):
+        go_to("resultats")
+
+    st.title("Facteurs explicatifs SHAP")
+    st.caption(f"Demande {data['id']} · {data['prenom']} {data['nom']}")
+
+    features_ml = construire_features_pour_modele(data)
+    donnees_client = dict(zip(FEATURES_NAMES, features_ml[0]))
+    shap_view.afficher_explications(donnees_client)
 
 
 # =====================================================================
@@ -2319,6 +2338,7 @@ def main():
         "tableau_de_bord": page_tableau_de_bord,
         "nouvelle_demande": page_nouvelle_demande,
         "resultats": page_resultats,
+        "explicabilite_shap": page_explicabilite_shap,
         "export_pdf": page_export_pdf,
         "historique": page_historique,
         "parametres": page_parametres,
