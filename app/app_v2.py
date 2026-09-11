@@ -2264,40 +2264,42 @@ def page_historique():
     df_filtre = df_filtre.sort_values("date", ascending=False)
     
     st.caption(f"{len(df_filtre)} demande(s) trouvée(s) sur {len(df)}")
-    historique_visible = df_filtre[
-        ["id", "demandeur", "date", "profil", "age", "montant", "decision", "score"]
-    ].rename(columns={
-        "id": "ID demande",
-        "demandeur": "Nom du demandeur",
-        "date": "Date",
-        "profil": "Profil",
-        "age": "Tranche d'âge",
-        "montant": "Montant demandé",
-        "decision": "Décision",
-        "score": "Score",
-    })
-    
-    st.caption("💡 Cliquez sur une ligne pour revoir le résultat complet de cette demande.")
-    evenement = st.dataframe(
-        historique_visible.style.apply(
-            style_ligne_selon_decision, col_decision="Décision",
-            colonnes_a_colorer=("Décision", "Score"), axis=1,
-        ),
-        column_config={
-            "Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY"),
-            "Montant demandé": st.column_config.NumberColumn("Montant demandé", format="%d FCFA"),
-            "Score": st.column_config.NumberColumn("Score", format="%d/100"),
-        },
-        use_container_width=True,
-        hide_index=True,
-        on_select="rerun",
-        selection_mode="single-row",
-    )
 
-    lignes_selectionnees = evenement.selection.rows if evenement and evenement.selection else []
-    if lignes_selectionnees:
-        id_choisi = historique_visible.iloc[lignes_selectionnees[0]]["ID demande"]
-        rouvrir_demande_sur_resultats(id_choisi)
+    if df_filtre.empty:
+        st.info("Aucune demande ne correspond à ces filtres.")
+        return
+
+    # st.dataframe ne rend cliquable que la case a cocher de selection, pas
+    # le reste de la ligne (limitation du composant) : chaque demande est
+    # donc rendue comme un vrai bouton pleine largeur, seul moyen fiable de
+    # rendre la ligne entiere cliquable. Colore par decision via une regle
+    # CSS scopee par ligne (meme code couleur que style_ligne_selon_decision).
+    regles_css = []
+    for ligne in df_filtre.itertuples():
+        cle = str(ligne.id).lstrip("#").replace("-", "_")
+        style = COULEUR_CELLULE_DECISION.get(ligne.decision, "")
+        if style:
+            # Les boutons secondaires ont deja des regles globales en
+            # !important (couleur/fond) : sans !important ici aussi, la
+            # couleur de decision perd systematiquement la cascade.
+            style_important = style.replace(";", " !important;")
+            regles_css.append(
+                f'.st-key-histo_{cle} button {{ {style_important} border-color:transparent !important; '
+                f'text-align:left !important; justify-content:flex-start !important; }}'
+            )
+    if regles_css:
+        st.markdown(f"<style>{''.join(regles_css)}</style>", unsafe_allow_html=True)
+
+    st.caption("💡 Cliquez sur une demande pour revoir son résultat complet.")
+    for ligne in df_filtre.itertuples():
+        cle = str(ligne.id).lstrip("#").replace("-", "_")
+        libelle = (
+            f"{ligne.id}  ·  {ligne.demandeur or '—'}  ·  {ligne.date.strftime('%d/%m/%Y')}  ·  "
+            f"{ligne.profil or '—'}  ·  {format_fcfa(ligne.montant)}  ·  "
+            f"{ligne.decision}  ·  Score {int(ligne.score)}/100"
+        )
+        if st.button(libelle, key=f"histo_{cle}", use_container_width=True):
+            rouvrir_demande_sur_resultats(ligne.id)
 
 
 # =====================================================================
