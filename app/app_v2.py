@@ -1053,6 +1053,7 @@ def rouvrir_demande_sur_resultats(id_demande):
         if score_ml is not None else data["montant_demande"]
     )
     st.session_state.dernier_facteurs_model = []
+    st.session_state.resultats_depuis_historique = True
     go_to("resultats")
 
 
@@ -1972,6 +1973,7 @@ def page_nouvelle_demande():
                 demande_data["id"] = demande_id
                 st.session_state.demande_data = demande_data
                 st.session_state.demande_id_counter += 1
+                st.session_state.resultats_depuis_historique = False
                 go_to("resultats")
             else:
                 st.error("La demande n'a pas pu être enregistrée. Vérifiez la connexion à la base de données.")
@@ -2033,6 +2035,10 @@ def page_resultats():
     resultat["resume"] = generer_resume_decision(
         resultat["decision"], resultat.get("facteurs") or [], data.get("prenom")
     )
+
+    if st.session_state.get("resultats_depuis_historique"):
+        if st.button("← Retour à l'historique"):
+            go_to("historique")
 
     st.title("Résultat de l'analyse")
     st.caption(f"ID : {data['id']} · Source : {score_source} · Statut : OK")
@@ -2321,7 +2327,7 @@ def page_historique():
                 st.session_state.historique_vue_corbeille = False
                 st.rerun()
         else:
-            if st.button("🗑️ Corbeille", width="stretch"):
+            if st.button("Corbeille", width="stretch"):
                 st.session_state.historique_vue_corbeille = True
                 st.rerun()
 
@@ -2389,8 +2395,8 @@ def page_historique():
     })
 
     st.caption(
-        "💡 Cochez une demande (case à gauche) pour la restaurer." if mode_corbeille
-        else "💡 Cochez une demande (case à gauche) pour l'afficher ou la supprimer."
+        "Cochez une demande (case à gauche) pour la restaurer." if mode_corbeille
+        else "Cochez une demande (case à gauche) pour l'afficher ou la supprimer."
     )
     cle_tableau = "tableau_corbeille" if mode_corbeille else "tableau_historique"
     evenement = st.dataframe(
