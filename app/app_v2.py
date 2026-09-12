@@ -440,7 +440,15 @@ def restaurer_session_persistante():
     ):
         return
     if not COOKIES.ready():
-        st.stop()
+        # Le composant cookies n'a pas encore renvoye les cookies du
+        # navigateur (aller-retour asynchrone). st.stop() ici bloquait
+        # l'app indefiniment si ce round-trip echouait ou tardait (page
+        # blanche, obligeant a relancer le serveur) : on renonce plutot
+        # a l'auto-connexion pour cette execution et on laisse la page de
+        # connexion s'afficher normalement. Si le cookie est bien present,
+        # streamlit-cookies-manager redeclenchera un rerun automatique des
+        # que le composant repond, et la connexion sera restauree alors.
+        return
 
     session_id = COOKIES.get("session_id")
     user = get_user_by_session(session_id) if session_id else None
