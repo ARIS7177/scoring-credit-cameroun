@@ -930,7 +930,19 @@ def get_historique_demandes(archivees: bool = False):
     `archivees=True` renvoie la corbeille (demandes au statut 'archivee')
     au lieu de l'historique normal.
     """
-    colonnes = ["id", "demandeur", "date", "profil", "age", "montant", "decision", "score", "statut"]
+    # Colonnes brutes de get_demandes() + colonnes derivees ajoutees
+    # ci-dessous : la liste complete est conservee (pas de df[colonnes] qui
+    # tronquerait le resultat) car d'autres pages (Tableau de bord) lisent
+    # directement des colonnes brutes comme date_creation.
+    colonnes_brutes = [
+        "id_demande", "user_id", "nom_demandeur", "prenom_demandeur",
+        "age_tranche", "secteur_activite", "montant_demande", "montant_accorde",
+        "score_ml", "categorie_risque", "decision", "statut",
+        "date_creation", "date_analyse",
+    ]
+    colonnes_derivees = [
+        "id", "date", "nom", "prenom", "demandeur", "age", "profil", "montant", "score",
+    ]
 
     def _construire_df(demandes):
         df = pd.DataFrame(demandes)
@@ -945,7 +957,10 @@ def get_historique_demandes(archivees: bool = False):
         df["score"] = pd.to_numeric(df["score_ml"], errors="coerce").fillna(0)
         df["decision"] = df["decision"].fillna("")
         df["statut"] = df["statut"].fillna("")
-        return df[colonnes]
+        return df
+
+    def _df_vide():
+        return pd.DataFrame(columns=colonnes_brutes + colonnes_derivees)
 
     user = st.session_state.get("user")
     if user:
@@ -958,10 +973,10 @@ def get_historique_demandes(archivees: bool = False):
         # Un utilisateur reel n'a jamais droit aux donnees de demonstration,
         # meme quand son historique (ou sa corbeille) est reellement vide -
         # sinon "0 demande active" retombe a tort sur les exemples fictifs.
-        return _construire_df(demandes) if demandes else pd.DataFrame(columns=colonnes)
+        return _construire_df(demandes) if demandes else _df_vide()
 
     if archivees:
-        return pd.DataFrame(columns=colonnes)
+        return _df_vide()
 
     # Données de démonstration utilisées uniquement quand aucun utilisateur
     # n'est connecté (pas de session Supabase du tout).
