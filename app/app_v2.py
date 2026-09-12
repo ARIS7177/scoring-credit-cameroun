@@ -2270,11 +2270,39 @@ def page_historique():
         return
 
     # st.dataframe ne rend cliquable que la case a cocher de selection, pas
-    # le reste de la ligne (limitation du composant) : chaque demande est
-    # donc rendue comme un vrai bouton pleine largeur, seul moyen fiable de
-    # rendre la ligne entiere cliquable. Colore par decision via une regle
-    # CSS scopee par ligne (meme code couleur que style_ligne_selon_decision).
-    regles_css = []
+    # le reste de la ligne (limitation du composant, verifie) : chaque
+    # demande est donc rendue comme un vrai bouton pleine largeur, seul
+    # moyen fiable de rendre la ligne entiere cliquable. L'alignement en
+    # colonnes est simule avec une police a chasse fixe + un remplissage
+    # par espaces (ljust/rjust), pour retrouver un rendu tableau.
+    LARGEUR = {"id": 20, "nom": 22, "date": 11, "profil": 24, "montant": 14, "decision": 19, "score": 8}
+
+    def _ligne_formatee(id_, nom, date, profil, montant, decision, score):
+        return (
+            f"{id_:<{LARGEUR['id']}}{nom:<{LARGEUR['nom']}}{date:<{LARGEUR['date']}}"
+            f"{profil:<{LARGEUR['profil']}}{montant:>{LARGEUR['montant']}}  "
+            f"{decision:<{LARGEUR['decision']}}{score:>{LARGEUR['score']}}"
+        )
+
+    entete = _ligne_formatee(
+        "ID demande", "Nom du demandeur", "Date", "Profil", "Montant", "Décision", "Score"
+    )
+    st.markdown(
+        f"<div style=\"font-family:'Courier New',monospace; font-size:13px; "
+        f"font-weight:700; color:{COULEUR_TEXTE}; margin:0; padding:8px 16px; white-space:pre; "
+        f"box-sizing:border-box;\">"
+        f"{entete}</div>",
+        unsafe_allow_html=True,
+    )
+
+    regles_css = [
+        '[class*="st-key-histo_"] button { font-family:"Courier New",monospace !important; '
+        'font-size:13px !important; text-align:left !important; '
+        'justify-content:flex-start !important; white-space:pre !important; '
+        'padding:8px 16px !important; box-sizing:border-box !important; }'
+        '[class*="st-key-histo_"] button * { font-family:"Courier New",monospace !important; '
+        'font-size:13px !important; margin:0 !important; padding:0 !important; }'
+    ]
     for ligne in df_filtre.itertuples():
         cle = str(ligne.id).lstrip("#").replace("-", "_")
         style = COULEUR_CELLULE_DECISION.get(ligne.decision, "")
@@ -2284,19 +2312,17 @@ def page_historique():
             # couleur de decision perd systematiquement la cascade.
             style_important = style.replace(";", " !important;")
             regles_css.append(
-                f'.st-key-histo_{cle} button {{ {style_important} border-color:transparent !important; '
-                f'text-align:left !important; justify-content:flex-start !important; }}'
+                f'.st-key-histo_{cle} button {{ {style_important} border-color:transparent !important; }}'
             )
-    if regles_css:
-        st.markdown(f"<style>{''.join(regles_css)}</style>", unsafe_allow_html=True)
+    st.markdown(f"<style>{''.join(regles_css)}</style>", unsafe_allow_html=True)
 
     st.caption("💡 Cliquez sur une demande pour revoir son résultat complet.")
     for ligne in df_filtre.itertuples():
         cle = str(ligne.id).lstrip("#").replace("-", "_")
-        libelle = (
-            f"{ligne.id}  ·  {ligne.demandeur or '—'}  ·  {ligne.date.strftime('%d/%m/%Y')}  ·  "
-            f"{ligne.profil or '—'}  ·  {format_fcfa(ligne.montant)}  ·  "
-            f"{ligne.decision}  ·  Score {int(ligne.score)}/100"
+        libelle = _ligne_formatee(
+            ligne.id, ligne.demandeur or "—", ligne.date.strftime("%d/%m/%Y"),
+            ligne.profil or "—", format_fcfa(ligne.montant), ligne.decision,
+            f"{int(ligne.score)}/100",
         )
         if st.button(libelle, key=f"histo_{cle}", use_container_width=True):
             rouvrir_demande_sur_resultats(ligne.id)
