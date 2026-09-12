@@ -2269,63 +2269,41 @@ def page_historique():
         st.info("Aucune demande ne correspond à ces filtres.")
         return
 
-    # st.dataframe ne rend cliquable que la case a cocher de selection, pas
-    # le reste de la ligne (limitation du composant, verifie) : chaque
-    # demande est donc rendue comme un vrai bouton pleine largeur, seul
-    # moyen fiable de rendre la ligne entiere cliquable. L'alignement en
-    # colonnes est simule avec une police a chasse fixe + un remplissage
-    # par espaces (ljust/rjust), pour retrouver un rendu tableau.
-    LARGEUR = {"id": 20, "nom": 22, "date": 11, "profil": 24, "montant": 14, "decision": 19, "score": 8}
+    historique_visible = df_filtre[
+        ["id", "demandeur", "date", "profil", "age", "montant", "decision", "score"]
+    ].rename(columns={
+        "id": "ID demande",
+        "demandeur": "Nom du demandeur",
+        "date": "Date",
+        "profil": "Profil",
+        "age": "Tranche d'âge",
+        "montant": "Montant demandé",
+        "decision": "Décision",
+        "score": "Score",
+    })
 
-    def _ligne_formatee(id_, nom, date, profil, montant, decision, score):
-        return (
-            f"{id_:<{LARGEUR['id']}}{nom:<{LARGEUR['nom']}}{date:<{LARGEUR['date']}}"
-            f"{profil:<{LARGEUR['profil']}}{montant:>{LARGEUR['montant']}}  "
-            f"{decision:<{LARGEUR['decision']}}{score:>{LARGEUR['score']}}"
-        )
-
-    entete = _ligne_formatee(
-        "ID demande", "Nom du demandeur", "Date", "Profil", "Montant", "Décision", "Score"
+    st.caption("💡 Cochez une demande (case à gauche) pour revoir son résultat complet.")
+    evenement = st.dataframe(
+        historique_visible.style.apply(
+            style_ligne_selon_decision, col_decision="Décision",
+            colonnes_a_colorer=("Décision",), axis=1,
+        ),
+        column_config={
+            "Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY"),
+            "Montant demandé": st.column_config.NumberColumn("Montant demandé", format="%d FCFA"),
+            "Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d/100"),
+        },
+        use_container_width=True,
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="tableau_historique",
     )
-    st.markdown(
-        f"<div style=\"font-family:'Courier New',monospace; font-size:13px; "
-        f"font-weight:700; color:{COULEUR_TEXTE}; margin:0; padding:8px 16px; white-space:pre; "
-        f"box-sizing:border-box;\">"
-        f"{entete}</div>",
-        unsafe_allow_html=True,
-    )
 
-    regles_css = [
-        '[class*="st-key-histo_"] button { font-family:"Courier New",monospace !important; '
-        'font-size:13px !important; text-align:left !important; '
-        'justify-content:flex-start !important; white-space:pre !important; '
-        'padding:8px 16px !important; box-sizing:border-box !important; }'
-        '[class*="st-key-histo_"] button * { font-family:"Courier New",monospace !important; '
-        'font-size:13px !important; margin:0 !important; padding:0 !important; }'
-    ]
-    for ligne in df_filtre.itertuples():
-        cle = str(ligne.id).lstrip("#").replace("-", "_")
-        style = COULEUR_CELLULE_DECISION.get(ligne.decision, "")
-        if style:
-            # Les boutons secondaires ont deja des regles globales en
-            # !important (couleur/fond) : sans !important ici aussi, la
-            # couleur de decision perd systematiquement la cascade.
-            style_important = style.replace(";", " !important;")
-            regles_css.append(
-                f'.st-key-histo_{cle} button {{ {style_important} border-color:transparent !important; }}'
-            )
-    st.markdown(f"<style>{''.join(regles_css)}</style>", unsafe_allow_html=True)
-
-    st.caption("💡 Cliquez sur une demande pour revoir son résultat complet.")
-    for ligne in df_filtre.itertuples():
-        cle = str(ligne.id).lstrip("#").replace("-", "_")
-        libelle = _ligne_formatee(
-            ligne.id, ligne.demandeur or "—", ligne.date.strftime("%d/%m/%Y"),
-            ligne.profil or "—", format_fcfa(ligne.montant), ligne.decision,
-            f"{int(ligne.score)}/100",
-        )
-        if st.button(libelle, key=f"histo_{cle}", use_container_width=True):
-            rouvrir_demande_sur_resultats(ligne.id)
+    lignes_selectionnees = evenement.selection.rows if evenement and evenement.selection else []
+    if lignes_selectionnees:
+        id_selectionne = df_filtre.iloc[lignes_selectionnees[0]]["id"]
+        rouvrir_demande_sur_resultats(id_selectionne)
 
 
 # =====================================================================
