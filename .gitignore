@@ -14,3 +14,4 @@ catboost_info/
 # Identifiants Supabase - ne jamais versionner
 .streamlit/secrets.toml
 app/.streamlit/secrets.toml
+**/.streamlit/secrets.toml

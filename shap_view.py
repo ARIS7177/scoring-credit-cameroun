@@ -3,6 +3,7 @@ shap_view.py - Module d'explicabilité SHAP pour CatBoost
 Andy - Semaine 4
 """
 
+import io
 import joblib
 import pandas as pd
 import numpy as np
@@ -124,6 +125,51 @@ def preparer_donnees_client(donnees_brutes):
 # 3. FONCTIONS D'AFFICHAGE DES GRAPHIQUES SHAP
 # ============================================
 
+def _figure_vers_png(fig):
+    """Serialise une figure matplotlib en octets PNG puis la ferme.
+    Mettre en cache des octets PNG plutot que l'objet Figure lui-meme :
+    un Figure matplotlib garde en cache via st.cache_resource ne se
+    redessine pas correctement une fois reutilise par st.pyplot() (figure
+    vide au 2e affichage, verifie) - les octets d'image, eux, n'ont
+    aucun etat fragile de ce genre."""
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight")
+    plt.close(fig)
+    return buf.getvalue()
+
+
+@st.cache_data(show_spinner=False)
+def _image_shap_waterfall(donnees_client_tuple):
+    """Calcule les valeurs SHAP et rend le waterfall plot en PNG, mis en
+    cache par dossier : recalculer et redessiner a chaque rerun Streamlit
+    (meme en ne faisant que revenir sur cette page) etait une source de
+    lenteur perceptible. `donnees_client_tuple` doit etre hashable (tuple
+    trie), voir afficher_shap_waterfall."""
+    donnees_client = dict(donnees_client_tuple)
+    explainer = charger_explainer()
+    df_client = preparer_donnees_client(donnees_client)
+
+    shap_values = explainer.shap_values(df_client)
+    if isinstance(shap_values, list):
+        shap_values = shap_values[1]
+
+    expected_value = explainer.expected_value
+    if isinstance(expected_value, list):
+        expected_value = expected_value[1]
+
+    fig, ax = plt.subplots(figsize=(12, 7))
+    shap.waterfall_plot(
+        shap.Explanation(
+            values=shap_values[0] if shap_values.ndim > 1 else shap_values,
+            base_values=expected_value,
+            data=df_client.iloc[0],
+            feature_names=df_client.columns
+        ),
+        show=False
+    )
+    return _figure_vers_png(fig)
+
+
 def afficher_shap_waterfall(donnees_client):
     """Affiche un waterfall plot SHAP."""
     try:
@@ -136,39 +182,32 @@ def afficher_shap_waterfall(donnees_client):
             "**f(x)** (en bas) : le point d'arrivée — une fois toutes les barres "
             "appliquées, c'est la valeur qui correspond au score final de ce dossier."
         )
-
-        modele = charger_modele()
-        explainer = charger_explainer()
-        df_client = preparer_donnees_client(donnees_client)
-        
-        # Calculer les valeurs SHAP
-        shap_values = explainer.shap_values(df_client)
-        
-        # Si shap_values est une liste (modèle multi-classe)
-        if isinstance(shap_values, list):
-            shap_values = shap_values[1]
-        
-        # Gérer expected_value
-        expected_value = explainer.expected_value
-        if isinstance(expected_value, list):
-            expected_value = expected_value[1]
-        
-        # Créer le waterfall plot
-        fig, ax = plt.subplots(figsize=(12, 7))
-        shap.waterfall_plot(
-            shap.Explanation(
-                values=shap_values[0] if shap_values.ndim > 1 else shap_values,
-                base_values=expected_value,
-                data=df_client.iloc[0],
-                feature_names=df_client.columns
-            ),
-            show=False
-        )
-        st.pyplot(fig)
-        plt.close()
-        
+        image_png = _image_shap_waterfall(tuple(sorted(donnees_client.items())))
+        st.image(image_png)
     except Exception as e:
         st.error(f"❌ Erreur SHAP (Waterfall) : {e}")
+
+
+@st.cache_data(show_spinner=False)
+def _image_shap_importance(donnees_client_tuple):
+    """Calcule les valeurs SHAP et rend le graphique d'importance en PNG,
+    mis en cache par dossier (meme raison que _image_shap_waterfall)."""
+    donnees_client = dict(donnees_client_tuple)
+    explainer = charger_explainer()
+    df_client = preparer_donnees_client(donnees_client)
+
+    shap_values = explainer.shap_values(df_client)
+    if isinstance(shap_values, list):
+        shap_values = shap_values[1]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    shap.bar_plot(
+        shap_values[0] if shap_values.ndim > 1 else shap_values,
+        feature_names=df_client.columns,
+        show=False
+    )
+    return _figure_vers_png(fig)
+
 
 def afficher_shap_importance(donnees_client):
     """Affiche un graphique à barres des variables importantes POUR CE CLIENT."""
@@ -179,28 +218,8 @@ def afficher_shap_importance(donnees_client):
             "du plus déterminant en haut, au moins déterminant en bas. Plus la "
             "barre est longue, plus la variable a pesé dans la décision."
         )
-
-        modele = charger_modele()
-        explainer = charger_explainer()
-        df_client = preparer_donnees_client(donnees_client)
-        
-        # Calculer les valeurs SHAP
-        shap_values = explainer.shap_values(df_client)
-        
-        # Si shap_values est une liste (modèle multi-classe)
-        if isinstance(shap_values, list):
-            shap_values = shap_values[1]
-        
-        # Créer le graphique à barres
-        fig, ax = plt.subplots(figsize=(10, 6))
-        shap.bar_plot(
-            shap_values[0] if shap_values.ndim > 1 else shap_values,
-            feature_names=df_client.columns,
-            show=False
-        )
-        st.pyplot(fig)
-        plt.close()
-        
+        image_png = _image_shap_importance(tuple(sorted(donnees_client.items())))
+        st.image(image_png)
     except Exception as e:
         st.error(f"❌ Erreur SHAP (Importance) : {e}")
         st.info("💡 Vérifiez que les features du modèle sont correctement définies.")
