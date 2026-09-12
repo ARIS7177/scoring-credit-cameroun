@@ -19,6 +19,18 @@ import base64
 import smtplib
 from email.message import EmailMessage
 from urllib.parse import urlencode
+
+# streamlit-cookies-manager (non maintenue) decore une fonction avec l'ancien
+# @st.cache, retire depuis peu de certaines versions recentes de Streamlit
+# (AttributeError bloquant au demarrage sur Streamlit Cloud, la version
+# locale utilisee pour les tests l'a encore mais avec un avertissement de
+# depreciation). st.cache_data est le remplacement direct recommande par
+# Streamlit lui-meme pour ce cas d'usage (fonction pure, mise en cache par
+# arguments) : on le pose sous cet ancien nom avant l'import si besoin,
+# pour rester compatible avec les deux familles de versions.
+if not hasattr(st, "cache"):
+    st.cache = st.cache_data
+
 from streamlit_cookies_manager import EncryptedCookieManager
 
 # Ajouter la racine du projet au chemin Python
