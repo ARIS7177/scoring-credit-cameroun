@@ -43,6 +43,8 @@ from db_manager import (
     save_demande,
     get_demandes,
     get_demande_detail,
+    archiver_demande,
+    restaurer_demande,
     get_agent_info,
     create_password_reset_token,
     reset_password_with_token,
@@ -917,37 +919,52 @@ def evaluer_demande_heuristique(data):
     }
 
 
-def get_historique_demandes():
+def get_historique_demandes(archivees: bool = False):
     """
     Récupère l'historique Supabase dans le format utilisé par l'interface.
-    
+
     ⚠️ IMPORTANT : L'historique doit être le MÊME pour tous les agents
     d'une même institution. Chaque agent voit TOUTES les demandes de son
     institution, pas seulement les siennes. C'est une exigence métier clé.
+
+    `archivees=True` renvoie la corbeille (demandes au statut 'archivee')
+    au lieu de l'historique normal.
     """
+    colonnes = ["id", "demandeur", "date", "profil", "age", "montant", "decision", "score", "statut"]
+
+    def _construire_df(demandes):
+        df = pd.DataFrame(demandes)
+        df["id"] = df["id_demande"]
+        df["date"] = pd.to_datetime(df["date_creation"])
+        df["nom"] = df["nom_demandeur"]
+        df["prenom"] = df["prenom_demandeur"]
+        df["demandeur"] = (df["prenom"].fillna("") + " " + df["nom"].fillna("")).str.strip()
+        df["age"] = df["age_tranche"]
+        df["profil"] = df["secteur_activite"]
+        df["montant"] = df["montant_demande"]
+        df["score"] = pd.to_numeric(df["score_ml"], errors="coerce").fillna(0)
+        df["decision"] = df["decision"].fillna("")
+        df["statut"] = df["statut"].fillna("")
+        return df[colonnes]
+
     user = st.session_state.get("user")
     if user:
         demandes = get_demandes(
             user_id=user["id"],
             role=user.get("role", "agent"),
-            institution=user.get("institution")
+            institution=user.get("institution"),
+            archivees=archivees,
         )
-        if demandes:
-            df = pd.DataFrame(demandes)
-            df["id"] = df["id_demande"]
-            df["date"] = pd.to_datetime(df["date_creation"])
-            df["nom"] = df["nom_demandeur"]
-            df["prenom"] = df["prenom_demandeur"]
-            df["demandeur"] = (df["prenom"].fillna("") + " " + df["nom"].fillna("")).str.strip()
-            df["age"] = df["age_tranche"]
-            df["profil"] = df["secteur_activite"]
-            df["montant"] = df["montant_demande"]
-            df["score"] = pd.to_numeric(df["score_ml"], errors="coerce").fillna(0)
-            df["decision"] = df["decision"].fillna("")
-            df["statut"] = df["statut"].fillna("")
-            return df
+        # Un utilisateur reel n'a jamais droit aux donnees de demonstration,
+        # meme quand son historique (ou sa corbeille) est reellement vide -
+        # sinon "0 demande active" retombe a tort sur les exemples fictifs.
+        return _construire_df(demandes) if demandes else pd.DataFrame(columns=colonnes)
 
-    # Données de démonstration utilisées uniquement quand aucune demande DB n'existe.
+    if archivees:
+        return pd.DataFrame(columns=colonnes)
+
+    # Données de démonstration utilisées uniquement quand aucun utilisateur
+    # n'est connecté (pas de session Supabase du tout).
     data = [
         {"id": "#20260815-0020", "date": "2026-08-15", "profil": "Salarié formel", "age": "35-44 ans", "montant": 2000000, "statut": "Accordé", "decision": "ACCORDÉ", "score": 72},
         {"id": "#20260815-0019", "date": "2026-08-15", "profil": "Salarié formel", "age": "35-44 ans", "montant": 3000000, "statut": "Accordé", "decision": "ACCORDÉ", "score": 72},
@@ -1022,6 +1039,60 @@ def rouvrir_demande_sur_resultats(id_demande):
     )
     st.session_state.dernier_facteurs_model = []
     go_to("resultats")
+
+
+@st.dialog("Demande sélectionnée")
+def dialogue_ligne_historique(id_demande, mode_corbeille):
+    """Mini fenetre ouverte quand une ligne de l'Historique (ou de la
+    Corbeille) est cochee. Historique normal : Afficher (va sur la page
+    Resultat) ou Supprimer (avec confirmation, met en corbeille - jamais
+    de suppression definitive). Corbeille : Restaurer uniquement."""
+    st.write(f"**{id_demande}**")
+
+    def _fermer(cle_tableau):
+        st.session_state.confirmation_suppression_demande = None
+        if cle_tableau in st.session_state:
+            del st.session_state[cle_tableau]
+        st.rerun()
+
+    if mode_corbeille:
+        st.caption("Cette demande est dans la corbeille.")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Restaurer", type="primary", width="stretch"):
+                restaurer_demande(id_demande)
+                get_demandes.clear()
+                _fermer("tableau_corbeille")
+        with col2:
+            if st.button("Fermer", width="stretch"):
+                _fermer("tableau_corbeille")
+        return
+
+    if st.session_state.get("confirmation_suppression_demande") == id_demande:
+        st.warning("Êtes-vous sûr de vouloir supprimer cette demande de l'historique ?")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Oui, supprimer", type="primary", width="stretch"):
+                archiver_demande(id_demande)
+                get_demandes.clear()
+                _fermer("tableau_historique")
+        with col2:
+            if st.button("Annuler", width="stretch"):
+                st.session_state.confirmation_suppression_demande = None
+                st.rerun()
+        return
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("Afficher", type="primary", width="stretch"):
+            rouvrir_demande_sur_resultats(id_demande)
+    with col2:
+        if st.button("Supprimer", width="stretch"):
+            st.session_state.confirmation_suppression_demande = id_demande
+            st.rerun()
+    with col3:
+        if st.button("Fermer", width="stretch"):
+            _fermer("tableau_historique")
 
 
 def generer_pdf(data, resultat, montant_disponible, taux, mensualite, score_model=None):
@@ -2221,19 +2292,39 @@ def page_historique():
     """Historique des demandes."""
     render_sidebar()
     render_entete()
-    
-    st.title("Historique des demandes")
-    df = get_historique_demandes()
+
+    mode_corbeille = st.session_state.get("historique_vue_corbeille", False)
+
+    col_titre, col_bouton = st.columns([5, 1.4])
+    with col_titre:
+        st.title("Corbeille" if mode_corbeille else "Historique des demandes")
+    with col_bouton:
+        st.write("")
+        st.write("")
+        if mode_corbeille:
+            if st.button("← Retour à l'historique", width="stretch"):
+                st.session_state.historique_vue_corbeille = False
+                st.rerun()
+        else:
+            if st.button("🗑️ Corbeille", width="stretch"):
+                st.session_state.historique_vue_corbeille = True
+                st.rerun()
+
+    df = get_historique_demandes(archivees=mode_corbeille)
 
     if df.empty:
         icone_b64 = charger_logo_base64("credora-icon.svg")
+        message = (
+            "La corbeille est vide." if mode_corbeille
+            else "Aucune demande enregistrée pour l'instant.<br>"
+                 "L'historique se remplit automatiquement à chaque analyse."
+        )
         st.markdown(
             f"""
             <div style="text-align:center; padding:48px 20px; opacity:0.85;">
                 <img src="data:image/svg+xml;base64,{icone_b64}" width="72" height="72" style="opacity:0.35;"><br>
                 <p style="color:{COULEUR_TEXTE}; opacity:0.6; margin-top:14px; font-size:1.05em;">
-                    Aucune demande enregistrée pour l'instant.<br>
-                    L'historique se remplit automatiquement à chaque analyse.
+                    {message}
                 </p>
             </div>
             """,
@@ -2282,7 +2373,11 @@ def page_historique():
         "score": "Score",
     })
 
-    st.caption("💡 Cochez une demande (case à gauche) pour revoir son résultat complet.")
+    st.caption(
+        "💡 Cochez une demande (case à gauche) pour la restaurer." if mode_corbeille
+        else "💡 Cochez une demande (case à gauche) pour l'afficher ou la supprimer."
+    )
+    cle_tableau = "tableau_corbeille" if mode_corbeille else "tableau_historique"
     evenement = st.dataframe(
         historique_visible.style.apply(
             style_ligne_selon_decision, col_decision="Décision",
@@ -2297,13 +2392,13 @@ def page_historique():
         hide_index=True,
         on_select="rerun",
         selection_mode="single-row",
-        key="tableau_historique",
+        key=cle_tableau,
     )
 
     lignes_selectionnees = evenement.selection.rows if evenement and evenement.selection else []
     if lignes_selectionnees:
         id_selectionne = df_filtre.iloc[lignes_selectionnees[0]]["id"]
-        rouvrir_demande_sur_resultats(id_selectionne)
+        dialogue_ligne_historique(id_selectionne, mode_corbeille)
 
 
 # =====================================================================

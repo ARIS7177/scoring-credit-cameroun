@@ -399,17 +399,23 @@ def get_demandes(
     limit: int = 50,
     role: str = "agent",
     institution: str = None,
+    archivees: bool = False,
 ) -> List[Dict]:
     """
     Récupère les demandes de crédit selon le rôle et l'institution de l'utilisateur.
-    
+
     LOGIQUE D'ACCÈS UNIFIÉE :
     ✅ Admin : voit TOUTES les demandes de toutes les institutions
     ✅ Manager : voit toutes les demandes de son institution
     ✅ Agent : voit TOUTES les demandes de son institution (PAS juste les siennes)
-    
+
     ⚠️ IMPORTANT MÉTIER : Tous les agents d'une même institution voient le MÊME
     historique complet. Cela facilite la collaboration et la traçabilité.
+
+    `archivees` : si False (par défaut), exclut les demandes mises à la
+    corbeille (statut='archivee'). Si True, ne renvoie QUE celles-ci
+    (vue "Corbeille"). Le statut 'archivee' sert de suppression douce :
+    la ligne reste en base, juste masquée de l'historique normal.
     """
     conditions = []
     params = []
@@ -432,6 +438,10 @@ def get_demandes(
     if statut:
         conditions.append("d.statut = %s")
         params.append(statut)
+    elif archivees:
+        conditions.append("d.statut = 'archivee'")
+    else:
+        conditions.append("COALESCE(d.statut, '') != 'archivee'")
 
     where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
 
@@ -471,6 +481,22 @@ def get_demande_detail(demande_id: str) -> Optional[Dict]:
     query = "SELECT * FROM public.demandes_credit WHERE id_demande = %s LIMIT 1"
     result = execute_query(query, (demande_id,), fetch=True)
     return dict(result[0]) if result and len(result) > 0 else None
+
+
+def archiver_demande(id_demande: str) -> bool:
+    """Met une demande à la corbeille (suppression douce) : passe son
+    statut à 'archivee'. La ligne n'est jamais effacée de la base, elle
+    est seulement exclue de get_demandes() par défaut."""
+    query = "UPDATE public.demandes_credit SET statut = 'archivee' WHERE id_demande = %s"
+    execute_query(query, (id_demande,))
+    return True
+
+
+def restaurer_demande(id_demande: str) -> bool:
+    """Sort une demande de la corbeille : remet son statut à 'analysee'."""
+    query = "UPDATE public.demandes_credit SET statut = 'analysee' WHERE id_demande = %s"
+    execute_query(query, (id_demande,))
+    return True
 
 
 # =====================================================================
