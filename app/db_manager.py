@@ -392,7 +392,7 @@ def save_demande(data: Dict, user_id: str) -> Optional[str]:
     return None
 
 
-@st.cache_data(ttl=10, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def get_demandes(
     user_id: Optional[str] = None,
     statut: str = None,
@@ -540,7 +540,7 @@ def update_agent_stats(user_id: str, decision: str):
 # =====================================================================
 # 4. HISTORIQUE ET AUDIT TRAIL
 # =====================================================================
-@st.cache_data(ttl=10, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def get_demande_historique(demande_id: str) -> List[Dict]:
     """Récupère l'historique complet d'une demande."""
     query = """
